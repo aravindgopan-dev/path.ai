@@ -46,7 +46,10 @@ export default function PairProgrammer() {
                 <Button variant="default">Terminal</Button>
               </DrawerTrigger>
               <DrawerContent>
-                <DrawerTitle className="sr-only">Terminal</DrawerTitle>
+                <DrawerHeader>
+                  <DrawerTitle className="sr-only">Terminal</DrawerTitle>
+                  <DrawerDescription className="sr-only">Interactive terminal for pair programming</DrawerDescription>
+                </DrawerHeader>
                 <div className="h-[400px] p-4 bg-[#1e1e1e]">
                   <XTerminal />
                 </div>
