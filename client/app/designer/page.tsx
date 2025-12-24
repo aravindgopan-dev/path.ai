@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -70,36 +70,94 @@ export default function Designer() {
     ]
   };
 
-  // Convert file tree to React Flow nodes and edges with horizontal layout
-  const { nodes: initialNodes, edges: initialEdges } = useMemo(() => {
-    const nodes: Node[] = [];
-    const edges: Edge[] = [];
+  // Track which nodes are expanded
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['node-0']));
+  
+  // Build a map of node IDs to their data for quick lookup
+  const [nodeDataMap] = useState<Map<string, { node: FileNode; depth: number; parentId: string | null }>>(() => {
+    const map = new Map();
     let nodeId = 0;
 
+    const traverse = (node: FileNode, depth: number, parentId: string | null) => {
+      const currentId = `node-${nodeId++}`;
+      map.set(currentId, { node, depth, parentId });
+      
+      if (node.children) {
+        node.children.forEach(child => traverse(child, depth + 1, currentId));
+      }
+    };
+
+    traverse(fileTree, 0, null);
+    return map;
+  });
+
+  // Generate nodes and edges based on expanded state
+  const generateNodesAndEdges = useCallback(() => {
+    const nodes: Node[] = [];
+    const edges: Edge[] = [];
     const HORIZONTAL_SPACING = 250;
     const VERTICAL_SPACING = 80;
+    const verticalPositions = new Map<number, number>();
 
-    // Recursive function to build nodes with horizontal layout
-    const buildTree = (
-      node: FileNode,
-      depth: number,
-      parentId: string | null,
-      verticalOffset: { value: number }
-    ): number => {
-      const currentId = `node-${nodeId++}`;
-      const currentY = verticalOffset.value;
+    const getNextVerticalPosition = (depth: number): number => {
+      const current = verticalPositions.get(depth) || 0;
+      verticalPositions.set(depth, current + VERTICAL_SPACING);
+      return current;
+    };
+
+    // Collect all visible node IDs in order using BFS
+    const visibleNodeIds: string[] = [];
+    const queue = ['node-0'];
+    const visited = new Set<string>();
+    
+    while (queue.length > 0) {
+      const nodeId = queue.shift()!;
+      if (visited.has(nodeId)) continue;
       
-      // Create node
+      visited.add(nodeId);
+      visibleNodeIds.push(nodeId);
+      
+      // Only add children if this node is expanded
+      if (expandedNodes.has(nodeId)) {
+        // Find all children of this node
+        const children: string[] = [];
+        nodeDataMap.forEach((data, id) => {
+          if (data.parentId === nodeId) {
+            children.push(id);
+          }
+        });
+        // Add children to queue
+        queue.push(...children);
+      }
+    }
+
+    // Create nodes in order
+    visibleNodeIds.forEach(nodeId => {
+      const data = nodeDataMap.get(nodeId);
+      if (!data) return;
+
+      const { node, depth, parentId } = data;
+      const hasChildren = node.children && node.children.length > 0;
+      const isExpanded = expandedNodes.has(nodeId);
+      
+      // Create label with expand/collapse indicator
+      const label = hasChildren 
+        ? `${isExpanded ? '[-]' : '[+]'} ${node.name}`
+        : node.name;
+      
       nodes.push({
-        id: currentId,
+        id: nodeId,
         data: { 
-          label: node.name,
+          label,
           type: node.type,
-          language: node.language 
+          language: node.language,
+          hasChildren,
+          isExpanded,
+          nodeData: node
         },
         position: { 
           x: depth * HORIZONTAL_SPACING, 
-          y: currentY 
+          y: getNextVerticalPosition(depth)
         },
         type: 'default',
         sourcePosition: Position.Right,
@@ -114,43 +172,81 @@ export default function Designer() {
           fontWeight: '500',
           minWidth: '120px',
           textAlign: 'center',
+          cursor: hasChildren ? 'pointer' : 'default',
         },
       });
+    });
 
-      // Create edge from parent
-      if (parentId) {
+    // Create edges after all nodes are created
+    visibleNodeIds.forEach(nodeId => {
+      const data = nodeDataMap.get(nodeId);
+      if (!data || !data.parentId) return;
+
+      const { parentId } = data;
+      
+      // Only create edge if parent is also visible
+      if (visited.has(parentId)) {
         edges.push({
-          id: `edge-${parentId}-${currentId}`,
+          id: `edge-${parentId}-${nodeId}`,
           source: parentId,
-          target: currentId,
+          target: nodeId,
           type: 'smoothstep',
           animated: true,
           style: { stroke: '#64748b', strokeWidth: 2 },
         });
       }
-
-      // Process children
-      if (node.children && node.children.length > 0) {
-        verticalOffset.value += VERTICAL_SPACING;
-        
-        node.children.forEach((child, index) => {
-          if (index > 0) {
-            verticalOffset.value += VERTICAL_SPACING;
-          }
-          buildTree(child, depth + 1, currentId, verticalOffset);
-        });
-      }
-
-      return currentY;
-    };
-
-    buildTree(fileTree, 0, null, { value: 0 });
+    });
 
     return { nodes, edges };
-  }, []);
+  }, [expandedNodes, nodeDataMap]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const { nodes: generatedNodes, edges: generatedEdges } = generateNodesAndEdges();
+  const [nodes, setNodes, onNodesChange] = useNodesState(generatedNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(generatedEdges);
+
+  // Update nodes and edges when expanded state changes
+  useEffect(() => {
+    const { nodes: newNodes, edges: newEdges } = generateNodesAndEdges();
+    setNodes(newNodes);
+    setEdges(newEdges);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedNodes]);
+
+  // Handle node click to expand/collapse
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    const hasChildren = node.data.hasChildren;
+    
+    if (hasChildren) {
+      setExpandedNodes(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(node.id)) {
+          // Collapse: remove this node and all its descendants
+          const toRemove = new Set<string>();
+          const queue = [node.id];
+          
+          while (queue.length > 0) {
+            const currentId = queue.shift()!;
+            if (currentId !== node.id) {
+              toRemove.add(currentId);
+            }
+            
+            nodeDataMap.forEach((data, id) => {
+              if (data.parentId === currentId) {
+                queue.push(id);
+              }
+            });
+          }
+          
+          toRemove.forEach(id => newSet.delete(id));
+          newSet.delete(node.id);
+        } else {
+          // Expand
+          newSet.add(node.id);
+        }
+        return newSet;
+      });
+    }
+  }, [nodeDataMap]);
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
@@ -159,6 +255,7 @@ export default function Designer() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClick}
         fitView
         attributionPosition="bottom-left"
       >
