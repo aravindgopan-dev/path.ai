@@ -24,14 +24,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <ClerkProvider>
-      <html lang="en" suppressHydrationWarning>
+      <html lang="en" suppressHydrationWarning className="h-full">
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+          className={`${geistSans.variable} ${geistMono.variable} antialiased h-screen w-screen overflow-hidden`}
         >
           <ThemeProvider
             attribute="class"
@@ -39,8 +39,15 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <Navbar />
-            {children}
+            {/* Layout wrapper */}
+            <div className="flex h-full w-full flex-col">
+              <Navbar />
+
+              {/* MAIN CONTENT AREA */}
+              <main className="flex-1 w-full overflow-hidden">
+                {children}
+              </main>
+            </div>
           </ThemeProvider>
         </body>
       </html>
