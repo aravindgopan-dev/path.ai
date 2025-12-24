@@ -5,12 +5,22 @@ import Link from "next/link";
 
 export default function Navbar() {
   return (
-    <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center px-4 container mx-auto justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="font-bold text-lg">
-            Path.ai
+    <nav className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-8">
+          <Link href="/" className="text-xl font-bold tracking-tight">
+            PATH.ai
           </Link>
+          <SignedIn>
+            <div className="hidden md:flex items-center gap-6">
+              <Link 
+                href="/dashboard" 
+                className="text-sm font-medium text-foreground hover:text-foreground/80 transition-colors"
+              >
+                Projects
+              </Link>
+            </div>
+          </SignedIn>
         </div>
 
         <div className="flex items-center gap-4">
