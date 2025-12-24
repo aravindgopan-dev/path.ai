@@ -96,14 +96,10 @@ export default function Designer() {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
     const HORIZONTAL_SPACING = 250;
-    const VERTICAL_SPACING = 80;
-    const verticalPositions = new Map<number, number>();
+    const VERTICAL_SPACING = 100;
 
-    const getNextVerticalPosition = (depth: number): number => {
-      const current = verticalPositions.get(depth) || 0;
-      verticalPositions.set(depth, current + VERTICAL_SPACING);
-      return current;
-    };
+    // Store node positions
+    const nodePositions = new Map<string, { x: number; y: number }>();
 
     // Collect all visible node IDs in order using BFS
     const visibleNodeIds: string[] = [];
@@ -131,14 +127,53 @@ export default function Designer() {
       }
     }
 
-    // Create nodes in order
+    // Calculate positions for all visible nodes
+    // First pass: calculate positions based on parent positions
+    visibleNodeIds.forEach((nodeId, index) => {
+      const data = nodeDataMap.get(nodeId);
+      if (!data) return;
+
+      const { depth, parentId } = data;
+      const x = depth * HORIZONTAL_SPACING;
+      let y = 0;
+
+      if (parentId && nodePositions.has(parentId)) {
+        // Position children relative to parent
+        const parentPos = nodePositions.get(parentId)!;
+        
+        // Find all siblings (children of the same parent)
+        const siblings: string[] = [];
+        visibleNodeIds.forEach(id => {
+          const siblingData = nodeDataMap.get(id);
+          if (siblingData && siblingData.parentId === parentId) {
+            siblings.push(id);
+          }
+        });
+        
+        // Find this node's index among siblings
+        const siblingIndex = siblings.indexOf(nodeId);
+        const totalSiblings = siblings.length;
+        
+        // Center children around parent's Y position
+        const startY = parentPos.y - ((totalSiblings - 1) * VERTICAL_SPACING) / 2;
+        y = startY + siblingIndex * VERTICAL_SPACING;
+      } else {
+        // Root node at y = 0
+        y = 0;
+      }
+
+      nodePositions.set(nodeId, { x, y });
+    });
+
+    // Create nodes with calculated positions
     visibleNodeIds.forEach(nodeId => {
       const data = nodeDataMap.get(nodeId);
       if (!data) return;
 
-      const { node, depth, parentId } = data;
+      const { node, parentId } = data;
       const hasChildren = node.children && node.children.length > 0;
       const isExpanded = expandedNodes.has(nodeId);
+      const position = nodePositions.get(nodeId)!;
       
       // Create label with expand/collapse indicator
       const label = hasChildren 
@@ -155,10 +190,7 @@ export default function Designer() {
           isExpanded,
           nodeData: node
         },
-        position: { 
-          x: depth * HORIZONTAL_SPACING, 
-          y: getNextVerticalPosition(depth)
-        },
+        position,
         type: 'default',
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
@@ -190,7 +222,7 @@ export default function Designer() {
           id: `edge-${parentId}-${nodeId}`,
           source: parentId,
           target: nodeId,
-          type: 'smoothstep',
+          type: 'default',
           animated: true,
           style: { stroke: '#64748b', strokeWidth: 2 },
         });
