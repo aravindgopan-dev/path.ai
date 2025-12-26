@@ -44,7 +44,7 @@ export default function RootLayout({
               <Navbar />
 
               {/* MAIN CONTENT AREA */}
-              <main className="flex-1 w-full overflow-auto">
+              <main className="flex-1 w-full overflow-hidden">
                 {children}
               </main>
             </div>
