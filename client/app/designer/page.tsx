@@ -13,72 +13,55 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-interface FileNode {
+interface TreeNode {
   name: string;
   type: 'file' | 'directory';
   language?: string;
-  content?: string;
-  children?: FileNode[];
+  description?: string;
+  children?: TreeNode[];
 }
 
-export default function Designer() {
-  const fileTree: FileNode = {
-    name: "root",
-    type: "directory",
-    children: [
-      {
-        name: "main.go",
-        type: "file",
-        language: "go",
-        content: ""
-      },
-      {
-        name: "go.mod",
-        type: "file",
-        content: ""
-      },
-      {
-        name: "internal",
-        type: "directory",
-        children: [
-          {
-            name: "service",
-            type: "directory",
-            children: [
-              {
-                name: "user_service.go",
-                type: "file",
-                language: "go",
-                content: ""
-              }
-            ]
-          },
-          {
-            name: "repository",
-            type: "directory",
-            children: [
-              {
-                name: "user_repo.go",
-                type: "file",
-                language: "go",
-                content: ""
-              }
-            ]
-          }
-        ]
-      }
-    ]
+interface ProjectSpec {
+  projectName: string;
+  description: string;
+  features: Array<{
+    id: string;
+    name: string;
+    description: string;
+    category?: string;
+  }>;
+  designerInput: {
+    nodes: TreeNode[];
   };
+  projectMarkdown: string;
+}
 
-  // Track which nodes are expanded
+function DesignerContent() {
+  const [projectSpec, setProjectSpec] = useState<ProjectSpec | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['node-0']));
-  
-  // Build a map of node IDs to their data for quick lookup
-  const [nodeDataMap] = useState<Map<string, { node: FileNode; depth: number; parentId: string | null }>>(() => {
-    const map = new Map();
+  const [nodeDataMap, setNodeDataMap] = useState<Map<string, { node: TreeNode; depth: number; parentId: string | null }>>(new Map());
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const spec = sessionStorage.getItem("projectSpec");
+      if (spec) {
+        try {
+          setProjectSpec(JSON.parse(spec));
+          sessionStorage.removeItem("projectSpec");
+        } catch (err) {
+          console.error('Failed to parse spec:', err);
+        }
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!projectSpec?.designerInput?.nodes) return;
+
+    const map = new Map<string, { node: TreeNode; depth: number; parentId: string | null }>();
     let nodeId = 0;
 
-    const traverse = (node: FileNode, depth: number, parentId: string | null) => {
+    const traverse = (node: TreeNode, depth: number, parentId: string | null) => {
       const currentId = `node-${nodeId++}`;
       map.set(currentId, { node, depth, parentId });
       
@@ -87,21 +70,19 @@ export default function Designer() {
       }
     };
 
-    traverse(fileTree, 0, null);
-    return map;
-  });
+    traverse({ name: 'root', type: 'directory', children: projectSpec.designerInput.nodes }, 0, null);
+    setNodeDataMap(map);
+    setExpandedNodes(new Set(['node-0']));
+  }, [projectSpec]);
 
-  // Generate nodes and edges based on expanded state
   const generateNodesAndEdges = useCallback(() => {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
     const HORIZONTAL_SPACING = 250;
     const VERTICAL_SPACING = 100;
 
-    // Store node positions
     const nodePositions = new Map<string, { x: number; y: number }>();
 
-    // Collect all visible node IDs in order using BFS
     const visibleNodeIds: string[] = [];
     const queue = ['node-0'];
     const visited = new Set<string>();
@@ -113,22 +94,17 @@ export default function Designer() {
       visited.add(nodeId);
       visibleNodeIds.push(nodeId);
       
-      // Only add children if this node is expanded
       if (expandedNodes.has(nodeId)) {
-        // Find all children of this node
         const children: string[] = [];
         nodeDataMap.forEach((data, id) => {
           if (data.parentId === nodeId) {
             children.push(id);
           }
         });
-        // Add children to queue
         queue.push(...children);
       }
     }
 
-    // Calculate positions for all visible nodes
-    // First pass: calculate positions based on parent positions
     visibleNodeIds.forEach((nodeId, index) => {
       const data = nodeDataMap.get(nodeId);
       if (!data) return;
@@ -138,10 +114,8 @@ export default function Designer() {
       let y = 0;
 
       if (parentId && nodePositions.has(parentId)) {
-        // Position children relative to parent
         const parentPos = nodePositions.get(parentId)!;
         
-        // Find all siblings (children of the same parent)
         const siblings: string[] = [];
         visibleNodeIds.forEach(id => {
           const siblingData = nodeDataMap.get(id);
@@ -150,22 +124,18 @@ export default function Designer() {
           }
         });
         
-        // Find this node's index among siblings
         const siblingIndex = siblings.indexOf(nodeId);
         const totalSiblings = siblings.length;
         
-        // Center children around parent's Y position
         const startY = parentPos.y - ((totalSiblings - 1) * VERTICAL_SPACING) / 2;
         y = startY + siblingIndex * VERTICAL_SPACING;
       } else {
-        // Root node at y = 0
         y = 0;
       }
 
       nodePositions.set(nodeId, { x, y });
     });
 
-    // Create nodes with calculated positions
     visibleNodeIds.forEach(nodeId => {
       const data = nodeDataMap.get(nodeId);
       if (!data) return;
@@ -175,10 +145,12 @@ export default function Designer() {
       const isExpanded = expandedNodes.has(nodeId);
       const position = nodePositions.get(nodeId)!;
       
-      // Create label with expand/collapse indicator
-      const label = hasChildren 
+      const labelText = hasChildren 
         ? `${isExpanded ? '[-]' : '[+]'} ${node.name}`
         : node.name;
+      const label = (
+        <span title={node.description || 'No description'}>{labelText}</span>
+      );
       
       nodes.push({
         id: nodeId,
@@ -186,6 +158,7 @@ export default function Designer() {
           label,
           type: node.type,
           language: node.language,
+          description: node.description || "No description",
           hasChildren,
           isExpanded,
           nodeData: node
@@ -203,20 +176,18 @@ export default function Designer() {
           fontSize: '14px',
           fontWeight: '500',
           minWidth: '120px',
-          textAlign: 'center',
+          textAlign: 'center' as const,
           cursor: hasChildren ? 'pointer' : 'default',
         },
       });
     });
 
-    // Create edges after all nodes are created
     visibleNodeIds.forEach(nodeId => {
       const data = nodeDataMap.get(nodeId);
       if (!data || !data.parentId) return;
 
       const { parentId } = data;
       
-      // Only create edge if parent is also visible
       if (visited.has(parentId)) {
         edges.push({
           id: `edge-${parentId}-${nodeId}`,
@@ -236,7 +207,6 @@ export default function Designer() {
   const [nodes, setNodes, onNodesChange] = useNodesState(generatedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(generatedEdges);
 
-  // Update nodes and edges when expanded state changes
   useEffect(() => {
     const { nodes: newNodes, edges: newEdges } = generateNodesAndEdges();
     setNodes(newNodes);
@@ -244,7 +214,6 @@ export default function Designer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedNodes]);
 
-  // Handle node click to expand/collapse
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     const hasChildren = node.data.hasChildren;
     
@@ -252,7 +221,6 @@ export default function Designer() {
       setExpandedNodes(prev => {
         const newSet = new Set(prev);
         if (newSet.has(node.id)) {
-          // Collapse: remove this node and all its descendants
           const toRemove = new Set<string>();
           const queue = [node.id];
           
@@ -272,7 +240,6 @@ export default function Designer() {
           toRemove.forEach(id => newSet.delete(id));
           newSet.delete(node.id);
         } else {
-          // Expand
           newSet.add(node.id);
         }
         return newSet;
@@ -280,8 +247,23 @@ export default function Designer() {
     }
   }, [nodeDataMap]);
 
+  if (!projectSpec) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-2">No Project Loaded</h2>
+          <p className="text-muted-foreground">Please start a project from the Architect module</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
+      <div className="absolute top-4 left-4 z-10 bg-background/95 backdrop-blur p-4 rounded-lg border max-w-sm">
+        <h2 className="font-bold text-lg">{projectSpec.projectName}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{projectSpec.description}</p>
+      </div>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -302,6 +284,10 @@ export default function Designer() {
       </ReactFlow>
     </div>
   );
+}
+
+export default function Designer() {
+  return <DesignerContent />;
 }
 
 
