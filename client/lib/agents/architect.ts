@@ -154,10 +154,33 @@ OUTPUT FORMAT (STRICT JSON, NO MARKDOWN):
   "description": "string (2-3 sentence)",
   "features": [array from input],
   "designerInput": {
-    "nodes": [complete TreeNode[] file tree]
+    "nodes": [
+      {
+        "name": "package.json",
+        "type": "file",
+        "description": "Project dependencies"
+      },
+      {
+        "name": "frontend",
+        "type": "directory",
+        "description": "Frontend application",
+        "children": [
+          {
+            "name": "app",
+            "type": "directory",
+            "description": "Next.js pages",
+            "children": [
+              { "name": "page.tsx", "type": "file", "description": "Home page" }
+            ]
+          }
+        ]
+      }
+    ]
   },
-  "projectMarkdown": "markdown summary with architecture and responsibilities"
+  "projectMarkdown": "markdown summary"
 }
+
+CRITICAL: Directories MUST have a "children" array with nested TreeNode objects. Do NOT create a flat structure.
 
 Critical output rules:
 - Respond with a single valid JSON object only
@@ -165,6 +188,8 @@ Critical output rules:
 - Do not include explanations or formatting
 - Do not include markdown or backticks
 - All strings must be properly escaped
+- ALL directories must have "children" arrays, even if empty
+- Nest children properly - do not flatten the structure
 
 The JSON must follow the exact schema provided.
 `;
@@ -759,20 +784,8 @@ Now design a realistic, feature-driven file structure for this project.`;
     if (jsonMatch) {
       parsedSpec = JSON.parse(jsonMatch[0]);
 
-      // Ensure features have IDs by mapping back to selectedFeatures
-      if (parsedSpec.features && Array.isArray(parsedSpec.features)) {
-        parsedSpec.features = parsedSpec.features.map((f: any, index: number) => {
-          // Try to find matching feature from selectedFeatures
-          const matchingFeature = selectedFeatures.find(
-            sf => sf.name.toLowerCase() === f.name?.toLowerCase()
-          );
-
-          return {
-            ...f,
-            id: matchingFeature?.id || f.id || `feature-${index}-${f.name?.toLowerCase().replace(/\s+/g, "-") || index}`,
-          };
-        });
-      }
+      // Use selectedFeatures directly - LLM response features might be incomplete
+      parsedSpec.features = selectedFeatures;
     } else {
       // Fallback: generate structure locally if LLM response is invalid
       const fileStructure = generateFileStructure(selectedFeatures, projectName);

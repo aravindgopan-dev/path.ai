@@ -216,7 +216,28 @@ function DesignerContent() {
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     const hasChildren = node.data.hasChildren;
+    const nodeType = node.data.type;
     
+    // If it's a file (leaf node), open in pair programmer
+    if (nodeType === 'file') {
+      const fileData = {
+        name: node.data.nodeData.name,
+        language: node.data.nodeData.language || getLanguageFromFileName(node.data.nodeData.name),
+        description: node.data.description,
+        content: `// ${node.data.nodeData.name}\n// ${node.data.description}\n\n// Start coding here...`,
+      };
+      
+      // Store file data in sessionStorage
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('currentFile', JSON.stringify(fileData));
+      }
+      
+      // Navigate to pair programmer
+      window.location.href = '/pair-programmer';
+      return;
+    }
+    
+    // If it's a directory, toggle expand/collapse
     if (hasChildren) {
       setExpandedNodes(prev => {
         const newSet = new Set(prev);
@@ -246,6 +267,31 @@ function DesignerContent() {
       });
     }
   }, [nodeDataMap]);
+
+  // Helper function to determine language from file extension
+  function getLanguageFromFileName(fileName: string): string {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    const languageMap: Record<string, string> = {
+      'ts': 'typescript',
+      'tsx': 'typescript',
+      'js': 'javascript',
+      'jsx': 'javascript',
+      'json': 'json',
+      'css': 'css',
+      'scss': 'scss',
+      'html': 'html',
+      'md': 'markdown',
+      'py': 'python',
+      'go': 'go',
+      'rs': 'rust',
+      'java': 'java',
+      'c': 'c',
+      'cpp': 'cpp',
+      'yml': 'yaml',
+      'yaml': 'yaml',
+    };
+    return languageMap[ext || ''] || 'plaintext';
+  }
 
   if (!projectSpec) {
     return (
