@@ -29,9 +29,9 @@ export default function RootLayout({
 }) {
   return (
     <ClerkProvider>
-      <html lang="en" suppressHydrationWarning className="h-full">
+      <html lang="en" suppressHydrationWarning>
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased h-screen w-screen overflow-hidden`}
+          className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen w-full`}
         >
           <ThemeProvider
             attribute="class"
@@ -40,11 +40,11 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             {/* Layout wrapper */}
-            <div className="flex h-full w-full flex-col">
+            <div className="flex min-h-screen w-full flex-col">
               <Navbar />
 
               {/* MAIN CONTENT AREA */}
-              <main className="flex-1 w-full overflow-hidden">
+              <main className="flex-1 w-full">
                 {children}
               </main>
             </div>
