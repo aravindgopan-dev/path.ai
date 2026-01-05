@@ -308,34 +308,42 @@ function generateFileStructure(features: Feature[], projectName: string): TreeNo
 
   // Components directory
   const componentsDirs: TreeNode[] = [];
-  componentsDirs.push({ name: "ui", type: "directory", description: "Reusable UI components (button, card, etc)", children: [
-    { name: "Button.tsx", type: "file", description: "Button component" },
-    { name: "Card.tsx", type: "file", description: "Card container component" },
-    { name: "Input.tsx", type: "file", description: "Form input component" },
-    { name: "Modal.tsx", type: "file", description: "Modal dialog component" },
-  ] });
-  
+  componentsDirs.push({
+    name: "ui", type: "directory", description: "Reusable UI components (button, card, etc)", children: [
+      { name: "Button.tsx", type: "file", description: "Button component" },
+      { name: "Card.tsx", type: "file", description: "Card container component" },
+      { name: "Input.tsx", type: "file", description: "Form input component" },
+      { name: "Modal.tsx", type: "file", description: "Modal dialog component" },
+    ]
+  });
+
   if (hasAuth) {
-    componentsDirs.push({ name: "auth", type: "directory", description: "Auth-related components", children: [
-      { name: "LoginForm.tsx", type: "file", description: "Login form component" },
-      { name: "RegisterForm.tsx", type: "file", description: "Registration form component" },
-      { name: "ProtectedRoute.tsx", type: "file", description: "Route protection wrapper" },
-    ] });
+    componentsDirs.push({
+      name: "auth", type: "directory", description: "Auth-related components", children: [
+        { name: "LoginForm.tsx", type: "file", description: "Login form component" },
+        { name: "RegisterForm.tsx", type: "file", description: "Registration form component" },
+        { name: "ProtectedRoute.tsx", type: "file", description: "Route protection wrapper" },
+      ]
+    });
   }
 
   if (hasRealtime) {
-    componentsDirs.push({ name: "chat", type: "directory", description: "Chat components", children: [
-      { name: "ChatBox.tsx", type: "file", description: "Chat message display" },
-      { name: "MessageInput.tsx", type: "file", description: "Message input field" },
-      { name: "ConversationList.tsx", type: "file", description: "List of conversations" },
-    ] });
+    componentsDirs.push({
+      name: "chat", type: "directory", description: "Chat components", children: [
+        { name: "ChatBox.tsx", type: "file", description: "Chat message display" },
+        { name: "MessageInput.tsx", type: "file", description: "Message input field" },
+        { name: "ConversationList.tsx", type: "file", description: "List of conversations" },
+      ]
+    });
   }
 
-  componentsDirs.push({ name: "common", type: "directory", description: "Common layout components", children: [
-    { name: "Header.tsx", type: "file", description: "Page header" },
-    { name: "Sidebar.tsx", type: "file", description: "Navigation sidebar" },
-    { name: "Footer.tsx", type: "file", description: "Page footer" },
-  ] });
+  componentsDirs.push({
+    name: "common", type: "directory", description: "Common layout components", children: [
+      { name: "Header.tsx", type: "file", description: "Page header" },
+      { name: "Sidebar.tsx", type: "file", description: "Navigation sidebar" },
+      { name: "Footer.tsx", type: "file", description: "Page footer" },
+    ]
+  });
 
   frontendChildren.push({ name: "components", type: "directory", description: "React components", children: componentsDirs });
 
@@ -364,26 +372,34 @@ function generateFileStructure(features: Feature[], projectName: string): TreeNo
 
   // Context/Store directory
   if (hasAuth) {
-    frontendChildren.push({ name: "context", type: "directory", description: "React context for state", children: [
-      { name: "AuthContext.tsx", type: "file", description: "Authentication context provider" },
-    ] });
+    frontendChildren.push({
+      name: "context", type: "directory", description: "React context for state", children: [
+        { name: "AuthContext.tsx", type: "file", description: "Authentication context provider" },
+      ]
+    });
   }
 
   // Utils directory
-  frontendChildren.push({ name: "lib", type: "directory", description: "Utility functions and helpers", children: [
-    { name: "utils.ts", type: "file", description: "Common utility functions" },
-    { name: "constants.ts", type: "file", description: "App constants" },
-  ] });
+  frontendChildren.push({
+    name: "lib", type: "directory", description: "Utility functions and helpers", children: [
+      { name: "utils.ts", type: "file", description: "Common utility functions" },
+      { name: "constants.ts", type: "file", description: "App constants" },
+    ]
+  });
 
   // Types directory
-  frontendChildren.push({ name: "types", type: "directory", description: "TypeScript type definitions", children: [
-    { name: "index.ts", type: "file", description: "Type exports" },
-  ] });
+  frontendChildren.push({
+    name: "types", type: "directory", description: "TypeScript type definitions", children: [
+      { name: "index.ts", type: "file", description: "Type exports" },
+    ]
+  });
 
   // Public directory
-  frontendChildren.push({ name: "public", type: "directory", description: "Static assets", children: [
-    { name: "favicon.ico", type: "file", description: "App favicon" },
-  ] });
+  frontendChildren.push({
+    name: "public", type: "directory", description: "Static assets", children: [
+      { name: "favicon.ico", type: "file", description: "App favicon" },
+    ]
+  });
 
   // Config files
   frontendChildren.push({ name: "next.config.ts", type: "file", description: "Next.js configuration" });
@@ -476,12 +492,16 @@ function generateFileStructure(features: Feature[], projectName: string): TreeNo
     const dbChildren: TreeNode[] = [
       { name: "index.ts", type: "file", description: "Database connection setup" },
       { name: "schema.ts", type: "file", description: "Database schema definition" },
-      { name: "migrations", type: "directory", description: "Database migrations", children: [
-        { name: "001_initial.ts", type: "file", description: "Initial migration" },
-      ] },
-      { name: "seeds", type: "directory", description: "Database seeders", children: [
-        { name: "seed.ts", type: "file", description: "Seed initial data" },
-      ] },
+      {
+        name: "migrations", type: "directory", description: "Database migrations", children: [
+          { name: "001_initial.ts", type: "file", description: "Initial migration" },
+        ]
+      },
+      {
+        name: "seeds", type: "directory", description: "Database seeders", children: [
+          { name: "seed.ts", type: "file", description: "Seed initial data" },
+        ]
+      },
     ];
     backendChildren.push({ name: "database", type: "directory", description: "Database setup and migrations", children: dbChildren });
   }
@@ -514,14 +534,18 @@ function generateFileStructure(features: Feature[], projectName: string): TreeNo
   backendChildren.push({ name: "utils", type: "directory", description: "Utility functions", children: backendUtilsChildren });
 
   // Constants directory
-  backendChildren.push({ name: "constants", type: "directory", description: "Application constants", children: [
-    { name: "index.ts", type: "file", description: "Exported constants" },
-  ] });
+  backendChildren.push({
+    name: "constants", type: "directory", description: "Application constants", children: [
+      { name: "index.ts", type: "file", description: "Exported constants" },
+    ]
+  });
 
   // Types directory
-  backendChildren.push({ name: "types", type: "directory", description: "TypeScript definitions", children: [
-    { name: "index.ts", type: "file", description: "Type exports" },
-  ] });
+  backendChildren.push({
+    name: "types", type: "directory", description: "TypeScript definitions", children: [
+      { name: "index.ts", type: "file", description: "Type exports" },
+    ]
+  });
 
   // Server entry points
   backendChildren.push({ name: "main.ts", type: "file", description: "Express server entry point" });
@@ -731,9 +755,24 @@ Now design a realistic, feature-driven file structure for this project.`;
     // Extract JSON from response
     let parsedSpec;
     const jsonMatch = (content as string).match(/\{[\s\S]*\}/);
-    
+
     if (jsonMatch) {
       parsedSpec = JSON.parse(jsonMatch[0]);
+
+      // Ensure features have IDs by mapping back to selectedFeatures
+      if (parsedSpec.features && Array.isArray(parsedSpec.features)) {
+        parsedSpec.features = parsedSpec.features.map((f: any, index: number) => {
+          // Try to find matching feature from selectedFeatures
+          const matchingFeature = selectedFeatures.find(
+            sf => sf.name.toLowerCase() === f.name?.toLowerCase()
+          );
+
+          return {
+            ...f,
+            id: matchingFeature?.id || f.id || `feature-${index}-${f.name?.toLowerCase().replace(/\s+/g, "-") || index}`,
+          };
+        });
+      }
     } else {
       // Fallback: generate structure locally if LLM response is invalid
       const fileStructure = generateFileStructure(selectedFeatures, projectName);
@@ -751,7 +790,7 @@ Now design a realistic, feature-driven file structure for this project.`;
     return parsedSpec as ProjectSpec;
   } catch (error) {
     console.error("Error generating final spec, using fallback:", error);
-    
+
     // Fallback to local generation
     const fileStructure = generateFileStructure(selectedFeatures, projectName);
     const projectMarkdown = buildProjectMarkdown(projectName, description, selectedFeatures, fileStructure);

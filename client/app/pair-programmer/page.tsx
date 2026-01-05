@@ -38,7 +38,7 @@ export default function PairProgrammer() {
   const [terminalOpen, setTerminalOpen] = useState(false)
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-background">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
       {/* Main Content Area - Takes all available space */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Icon Sidebar */}
