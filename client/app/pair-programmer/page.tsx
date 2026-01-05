@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Editor } from "@monaco-editor/react"
 import dynamic from "next/dynamic"
 import {
@@ -33,9 +33,38 @@ const XTerminal = dynamic(
 
 type SidebarTab = "agent" | "docs"
 
+interface FileData {
+  name: string;
+  language: string;
+  description: string;
+  content: string;
+}
+
 export default function PairProgrammer() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("agent")
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const [currentFile, setCurrentFile] = useState<FileData>({
+    name: "getTasks.controller.ts",
+    language: "typescript",
+    description: "Task controller",
+    content: "// Start coding here..."
+  })
+
+  // Load file from sessionStorage if available
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const fileData = sessionStorage.getItem('currentFile');
+      if (fileData) {
+        try {
+          const parsedFile = JSON.parse(fileData);
+          setCurrentFile(parsedFile);
+          sessionStorage.removeItem('currentFile');
+        } catch (err) {
+          console.error('Failed to parse file data:', err);
+        }
+      }
+    }
+  }, [])
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
@@ -92,15 +121,17 @@ export default function PairProgrammer() {
               {/* File Tab Header */}
               <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-2 text-sm shrink-0">
                 <Code2 size={16} className="text-muted-foreground" />
-                <span className="font-medium">getTasks.controller.ts</span>
+                <span className="font-medium">{currentFile.name}</span>
+                <span className="text-xs text-muted-foreground ml-2">({currentFile.language})</span>
               </div>
 
               {/* Editor */}
               <div className="flex-1 overflow-hidden">
                 <Editor
                   height="100%"
-                  defaultLanguage="typescript"
-                  defaultValue="// Start coding here..."
+                  language={currentFile.language}
+                  value={currentFile.content}
+                  onChange={(value) => setCurrentFile(prev => ({ ...prev, content: value || '' }))}
                   theme="vs-dark"
                   loading={
                     <div className="flex h-full items-center justify-center">
@@ -159,11 +190,11 @@ export default function PairProgrammer() {
 
         {/* Center - File Info */}
         <div className="flex flex-1 items-center gap-2 px-1.5 text-xs">
-          <span>getTasks.controller.ts</span>
+          <span>{currentFile.name}</span>
           <span>|</span>
-          <span>TypeScript</span>
+          <span>{currentFile.language}</span>
           <span>|</span>
-          <span>Ln 24, Col 8</span>
+          <span>Ln 1, Col 1</span>
         </div>
 
         <Separator orientation="vertical" className="h-3 mx-1" />
