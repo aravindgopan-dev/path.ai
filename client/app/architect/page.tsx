@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Send, CheckCircle2, X } from "lucide-react";
+import { useAppStore, type TreeNode } from "@/lib/store";
 
 interface Feature {
   id: string;
@@ -29,13 +30,14 @@ interface ProjectSpec {
   description: string;
   features: Feature[];
   designerInput: {
-    nodes: unknown[];
+    nodes: TreeNode[];
   };
   projectMarkdown: string;
 }
 
 export default function ArchitectPage() {
   const router = useRouter();
+  const setProjectSpec = useAppStore((state) => state.setProjectSpec);
 
   const [appState, setAppState] = useState<AppState>("initial");
   const [projectIdea, setProjectIdea] = useState("");
@@ -179,10 +181,8 @@ export default function ArchitectPage() {
   const handleProceedToDesigner = () => {
     if (!finalSpec) return;
 
-    // Store spec in sessionStorage instead of URL params
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("projectSpec", JSON.stringify(finalSpec));
-    }
+    // Store spec in Zustand store
+    setProjectSpec(finalSpec);
 
     router.push("/designer");
   };

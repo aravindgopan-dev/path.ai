@@ -12,6 +12,8 @@ import ReactFlow, {
   Position,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { useAppStore } from '@/lib/store';
+import { getSocket } from '@/lib/socket';
 
 interface TreeNode {
   name: string;
@@ -37,23 +39,44 @@ interface ProjectSpec {
 }
 
 function DesignerContent() {
-  const [projectSpec, setProjectSpec] = useState<ProjectSpec | null>(null);
+  const projectSpec = useAppStore((state) => state.projectSpec);
+  const setCurrentFile = useAppStore((state) => state.setCurrentFile);
+  const addToHistory = useAppStore((state) => state.addToHistory);
+  
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['node-0']));
   const [nodeDataMap, setNodeDataMap] = useState<Map<string, { node: TreeNode; depth: number; parentId: string | null }>>(new Map());
 
+  // No need to load from sessionStorage - Zustand handles persistence
+
+  // Create project in sandbox when designer loads
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const spec = sessionStorage.getItem("projectSpec");
-      if (spec) {
-        try {
-          setProjectSpec(JSON.parse(spec));
-          sessionStorage.removeItem("projectSpec");
-        } catch (err) {
-          console.error('Failed to parse spec:', err);
+    if (!projectSpec) return;
+
+    const socket = getSocket();
+
+    // Emit create-project event
+    socket.emit('create-project', projectSpec);
+
+    // Listen for project creation response
+    const handleProjectCreated = (response: any) => {
+      if (response.success) {
+        if (response.alreadyExists) {
+          console.log('Project already exists in sandbox:', response.path);
+        } else {
+          console.log('Project created in sandbox:', response.path);
         }
+      } else {
+        console.error('Failed to create project:', response.error);
       }
-    }
-  }, []);
+    };
+
+    socket.on('project-created', handleProjectCreated);
+
+    // Cleanup
+    return () => {
+      socket.off('project-created', handleProjectCreated);
+    };
+  }, [projectSpec]);
 
   useEffect(() => {
     if (!projectSpec?.designerInput?.nodes) return;
@@ -220,17 +243,35 @@ function DesignerContent() {
     
     // If it's a file (leaf node), open in pair programmer
     if (nodeType === 'file') {
+      // Build file path by traversing up the tree
+      const buildPath = (nodeId: string): string => {
+        const parts: string[] = [];
+        let currentId: string | null = nodeId;
+        
+        while (currentId) {
+          const nodeData = nodeDataMap.get(currentId);
+          if (!nodeData || nodeData.node.name === 'root') break;
+          
+          parts.unshift(nodeData.node.name);
+          currentId = nodeData.parentId;
+        }
+        
+        return parts.join('/');
+      };
+      
+      const filePath = buildPath(node.id);
+      
       const fileData = {
         name: node.data.nodeData.name,
         language: node.data.nodeData.language || getLanguageFromFileName(node.data.nodeData.name),
         description: node.data.description,
         content: `// ${node.data.nodeData.name}\n// ${node.data.description}\n\n// Start coding here...`,
+        path: filePath,
       };
       
-      // Store file data in sessionStorage
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('currentFile', JSON.stringify(fileData));
-      }
+      // Store file data in Zustand store
+      setCurrentFile(fileData);
+      addToHistory(fileData);
       
       // Navigate to pair programmer
       window.location.href = '/pair-programmer';

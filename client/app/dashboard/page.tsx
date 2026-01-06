@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -39,10 +40,12 @@ export default function Dashboard() {
             <p className="text-sm text-muted-foreground mb-6 text-center max-w-sm">
               Start a new project and learn by doing. Each project is designed to help you master real-world skills.
             </p>
-            <Button size="lg" className="gap-2">
-              <Plus className="h-4 w-4" />
-              Create New Project
-            </Button>
+            <Link href="/architect">
+              <Button size="lg" className="gap-2">
+                <Plus className="h-4 w-4" />
+                Create New Project
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
@@ -102,10 +105,12 @@ export default function Dashboard() {
               <p className="text-sm text-muted-foreground mb-6 text-center max-w-sm">
                 Get started by creating your first project. Each project comes with guided steps and resources.
               </p>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Create Your First Project
-              </Button>
+              <Link href="/architect">
+                <Button className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Create Your First Project
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         )}

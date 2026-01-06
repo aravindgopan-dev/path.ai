@@ -786,6 +786,16 @@ Now design a realistic, feature-driven file structure for this project.`;
 
       // Use selectedFeatures directly - LLM response features might be incomplete
       parsedSpec.features = selectedFeatures;
+
+      // Always use local file structure generation to ensure both frontend and backend are created
+      // The LLM often only generates frontend or has incomplete structure
+      const fileStructure = generateFileStructure(selectedFeatures, projectName);
+      parsedSpec.designerInput = { nodes: fileStructure };
+
+      // Use LLM-generated markdown if available, otherwise generate locally
+      if (!parsedSpec.projectMarkdown) {
+        parsedSpec.projectMarkdown = buildProjectMarkdown(projectName, description, selectedFeatures, fileStructure);
+      }
     } else {
       // Fallback: generate structure locally if LLM response is invalid
       const fileStructure = generateFileStructure(selectedFeatures, projectName);
