@@ -18,6 +18,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { useAppStore } from "@/lib/store"
+import { getSocket } from "@/lib/socket"
 
 const XTerminal = dynamic(
   () => import("@/components/terminal").then((mod) => ({ default: mod.XTerminal })),
@@ -43,28 +45,53 @@ interface FileData {
 export default function PairProgrammer() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("agent")
   const [terminalOpen, setTerminalOpen] = useState(false)
-  const [currentFile, setCurrentFile] = useState<FileData>({
-    name: "getTasks.controller.ts",
-    language: "typescript",
-    description: "Task controller",
-    content: "// Start coding here..."
-  })
+  
+  // Use Zustand store for current file
+  const currentFile = useAppStore((state) => state.currentFile);
+  const setCurrentFile = useAppStore((state) => state.setCurrentFile);
+  const projectSpec = useAppStore((state) => state.projectSpec);
 
-  // Load file from sessionStorage if available
+  // Sync file changes to sandbox with debouncing
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const fileData = sessionStorage.getItem('currentFile');
-      if (fileData) {
-        try {
-          const parsedFile = JSON.parse(fileData);
-          setCurrentFile(parsedFile);
-          sessionStorage.removeItem('currentFile');
-        } catch (err) {
-          console.error('Failed to parse file data:', err);
-        }
+    if (!currentFile || !currentFile.path || !projectSpec) return;
+
+    const socket = getSocket();
+    let timeoutId: NodeJS.Timeout;
+
+    // Debounce file writes (1 second)
+    const syncFile = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        socket.emit('write-file', {
+          projectName: projectSpec.projectName,
+          filePath: currentFile.path,
+          content: currentFile.content,
+        });
+      }, 1000);
+    };
+
+    // Listen for write confirmation
+    const handleFileWritten = (response: any) => {
+      if (response.success) {
+        console.log('File synced to sandbox:', response.path);
+      } else {
+        console.error('Failed to sync file:', response.error);
       }
-    }
-  }, [])
+    };
+
+    socket.on('file-written', handleFileWritten);
+
+    // Trigger initial sync
+    syncFile();
+
+    // Cleanup
+    return () => {
+      clearTimeout(timeoutId);
+      socket.off('file-written', handleFileWritten);
+    };
+  }, [currentFile?.content, currentFile?.path, projectSpec]);
+
+  // No need to load from sessionStorage - Zustand handles persistence
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
@@ -121,32 +148,46 @@ export default function PairProgrammer() {
               {/* File Tab Header */}
               <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-2 text-sm shrink-0">
                 <Code2 size={16} className="text-muted-foreground" />
-                <span className="font-medium">{currentFile.name}</span>
-                <span className="text-xs text-muted-foreground ml-2">({currentFile.language})</span>
+                <span className="font-medium">{currentFile?.name || 'untitled.ts'}</span>
+                <span className="text-xs text-muted-foreground ml-2">({currentFile?.language || 'typescript'})</span>
               </div>
 
               {/* Editor */}
               <div className="flex-1 overflow-hidden">
-                <Editor
-                  height="100%"
-                  language={currentFile.language}
-                  value={currentFile.content}
-                  onChange={(value) => setCurrentFile(prev => ({ ...prev, content: value || '' }))}
-                  theme="vs-dark"
-                  loading={
-                    <div className="flex h-full items-center justify-center">
-                      Loading editor...
+                {currentFile ? (
+                  <Editor
+                    height="100%"
+                    language={currentFile.language}
+                    value={currentFile.content}
+                    onChange={(value) => {
+                      if (currentFile) {
+                        setCurrentFile({ ...currentFile, content: value || '' });
+                      }
+                    }}
+                    theme="vs-dark"
+                    loading={
+                      <div className="flex h-full items-center justify-center">
+                        Loading editor...
+                      </div>
+                    }
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 14,
+                      lineNumbers: "on",
+                      roundedSelection: false,
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <Code2 size={48} className="mx-auto mb-4 opacity-50" />
+                      <p>No file selected</p>
+                      <p className="text-sm mt-2">Open a file from the designer to start coding</p>
                     </div>
-                  }
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    lineNumbers: "on",
-                    roundedSelection: false,
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                  }}
-                />
+                  </div>
+                )}
               </div>
             </div>
           </ResizablePanel>
@@ -190,9 +231,9 @@ export default function PairProgrammer() {
 
         {/* Center - File Info */}
         <div className="flex flex-1 items-center gap-2 px-1.5 text-xs">
-          <span>{currentFile.name}</span>
+          <span>{currentFile?.name || 'untitled.ts'}</span>
           <span>|</span>
-          <span>{currentFile.language}</span>
+          <span>{currentFile?.language || 'typescript'}</span>
           <span>|</span>
           <span>Ln 1, Col 1</span>
         </div>

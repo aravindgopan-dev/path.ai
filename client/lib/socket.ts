@@ -11,8 +11,27 @@ export const getSocket = (): Socket => {
             reconnectionDelay: 1000,
             reconnectionAttempts: 5,
         });
+
+        socket.on('connect', () => {
+            console.log('Connected to WebSocket server');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from WebSocket server');
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('WebSocket connection error:', error);
+        });
     }
     return socket;
+};
+
+export const disconnectSocket = () => {
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
 };
 
 export default getSocket;
