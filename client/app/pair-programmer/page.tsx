@@ -1,7 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Editor } from "@monaco-editor/react"
+import { useState, useEffect, useRef } from "react"
+import CodeMirror from "@uiw/react-codemirror"
+import { javascript } from "@codemirror/lang-javascript"
+import { html } from "@codemirror/lang-html"
+import { css } from "@codemirror/lang-css"
+import { json } from "@codemirror/lang-json"
 import dynamic from "next/dynamic"
 import {
   MessageCircle,
@@ -15,7 +19,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable"
-import { Button } from "@/components/ui/button"
+import {  Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { useAppStore } from "@/lib/store"
@@ -45,11 +49,15 @@ interface FileData {
 export default function PairProgrammer() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("agent")
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
   
   // Use Zustand store for current file
   const currentFile = useAppStore((state) => state.currentFile);
   const setCurrentFile = useAppStore((state) => state.setCurrentFile);
   const projectSpec = useAppStore((state) => state.projectSpec);
+  
+  // Editor view ref for CodeMirror (optional, for advanced use)
+  const editorViewRef = useRef<any>(null);
 
   // Sync file changes to sandbox with debouncing
   useEffect(() => {
@@ -91,7 +99,33 @@ export default function PairProgrammer() {
     };
   }, [currentFile?.content, currentFile?.path, projectSpec]);
 
-  // No need to load from sessionStorage - Zustand handles persistence
+  // Track client-side mounting to prevent SSR/hydration issues
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Helper function to get language extension based on file language
+  const getLanguageExtension = (language: string) => {
+    switch (language?.toLowerCase()) {
+      case 'javascript':
+      case 'js':
+        return [javascript({ jsx: false })];
+      case 'typescript':
+      case 'ts':
+        return [javascript({ jsx: false, typescript: true })];
+      case 'tsx':
+      case 'jsx':
+        return [javascript({ jsx: true, typescript: language === 'tsx' })];
+      case 'html':
+        return [html()];
+      case 'css':
+        return [css()];
+      case 'json':
+        return [json()];
+      default:
+        return [];
+    }
+  };
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
@@ -153,30 +187,47 @@ export default function PairProgrammer() {
               </div>
 
               {/* Editor */}
-              <div className="flex-1 overflow-hidden">
-                {currentFile ? (
-                  <Editor
-                    height="100%"
-                    language={currentFile.language}
+              <div className="flex-1 overflow-hidden" style={{ position: 'relative' }}>
+                {!isMounted ? (
+                  <div className="flex h-full items-center justify-center">
+                    Initializing editor...
+                  </div>
+                ) : currentFile ? (
+                  <CodeMirror
+                    key={currentFile.path || 'untitled'}
                     value={currentFile.content}
+                    height="100%"
+                    extensions={getLanguageExtension(currentFile.language)}
                     onChange={(value) => {
                       if (currentFile) {
-                        setCurrentFile({ ...currentFile, content: value || '' });
+                        setCurrentFile({ ...currentFile, content: value });
                       }
                     }}
-                    theme="vs-dark"
-                    loading={
-                      <div className="flex h-full items-center justify-center">
-                        Loading editor...
-                      </div>
-                    }
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 14,
-                      lineNumbers: "on",
-                      roundedSelection: false,
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
+                    theme="dark"
+                    basicSetup={{
+                      lineNumbers: true,
+                      highlightActiveLineGutter: true,
+                      highlightActiveLine: true,
+                      foldGutter: true,
+                      drawSelection: true,
+                      dropCursor: true,
+                      allowMultipleSelections: true,
+                      indentOnInput: true,
+                      bracketMatching: true,
+                      closeBrackets: false,
+                      autocompletion: true,
+                      rectangularSelection: true,
+                      crosshairCursor: true,
+                      highlightSelectionMatches: true,
+                      closeBracketsKeymap: false,
+                      searchKeymap: true,
+                      foldKeymap: true,
+                      completionKeymap: true,
+                      lintKeymap: true,
+                    }}
+                    style={{
+                      height: '100%',
+                      fontSize: '14px',
                     }}
                   />
                 ) : (
