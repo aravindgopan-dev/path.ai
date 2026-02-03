@@ -2,7 +2,7 @@
 .roadmap-container {
     width: 100vw;
     height: 100vh;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: oklch(0.129 0.042 264.695);
     overflow: hidden;
     position: relative;
 }
@@ -16,8 +16,8 @@
 
 /* Custom Level Node Styling */
 .level-node {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border: 5px solid #fff;
+    background: oklch(0.208 0.042 265.755);
+    border: 1px solid oklch(1 0 0 / 10%);
     border-radius: 20px;
     width: 180px;
     height: 180px;
@@ -28,8 +28,8 @@
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow:
-        0 10px 30px rgba(0, 0, 0, 0.3),
-        0 0 0 0 rgba(102, 126, 234, 0.7);
+        0 4px 12px rgba(0, 0, 0, 0.4),
+        0 0 0 0 rgba(72, 85, 234, 0.3);
     position: relative;
     animation: float 3s ease-in-out infinite;
 }
@@ -49,13 +49,18 @@
 .level-node:hover {
     transform: scale(1.15) translateY(-5px);
     box-shadow:
-        0 15px 40px rgba(0, 0, 0, 0.4),
-        0 0 30px rgba(102, 126, 234, 0.6);
+        0 8px 24px rgba(0, 0, 0, 0.5),
+        0 0 30px rgba(124, 139, 255, 0.4);
+    border-color: oklch(0.488 0.243 264.376);
     animation: none;
 }
 
 .level-node.completed {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    background: oklch(0.279 0.041 260.031);
+    border-color: oklch(0.488 0.243 264.376);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.4),
+        0 0 20px rgba(124, 139, 255, 0.3);
     animation: pulse 2s ease-in-out infinite;
 }
 
@@ -63,19 +68,20 @@
 
     0%,
     100% {
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(245, 87, 108, 0.7);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 0 rgba(124, 139, 255, 0.5);
     }
 
     50% {
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 20px 10px rgba(245, 87, 108, 0);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px 10px rgba(124, 139, 255, 0);
     }
 }
 
 .level-node.locked {
-    background: linear-gradient(135deg, #757F9A 0%, #D7DDE8 100%);
+    background: oklch(0.17 0.03 264.695);
+    border-color: oklch(1 0 0 / 5%);
     cursor: not-allowed;
-    opacity: 0.6;
-    filter: grayscale(0.5);
+    opacity: 0.5;
+    filter: grayscale(0.8);
     animation: none;
 }
 
@@ -177,9 +183,9 @@
 
 .react-flow__edge-path {
     stroke-width: 8;
-    stroke: #ff6b9d;
+    stroke: oklch(0.488 0.243 264.376);
     animation: none;
-    filter: drop-shadow(0 2px 6px rgba(255, 107, 157, 0.6));
+    filter: drop-shadow(0 2px 6px rgba(124, 139, 255, 0.4));
 }
 
 @keyframes dash {
@@ -189,27 +195,30 @@
 }
 
 .react-flow__controls {
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(33, 35, 68, 0.9);
+    border: 1px solid oklch(1 0 0 / 10%);
     border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .react-flow__controls-button {
-    background: white;
+    background: rgba(33, 35, 68, 0.5);
     border: none;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid oklch(1 0 0 / 10%);
     transition: all 0.2s ease;
+    color: oklch(0.984 0.003 247.858);
 }
 
 .react-flow__controls-button:hover {
-    background: #f5f5f5;
+    background: oklch(0.279 0.041 260.031);
     transform: scale(1.1);
 }
 
 .react-flow__minimap {
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(33, 35, 68, 0.9);
+    border: 1px solid oklch(1 0 0 / 10%);
     border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 /* Expanded node view (when clicked) */

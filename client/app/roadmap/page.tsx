@@ -216,7 +216,7 @@ export default function RoadmapPage() {
               <stop offset="100%" stopColor="#ff6b9d" />
             </linearGradient>
           </defs>
-          <Background color="#aaa" gap={16} />
+          <Background color="#1a1c38" gap={16} />
           <Controls />
         </ReactFlow>
       </div>
