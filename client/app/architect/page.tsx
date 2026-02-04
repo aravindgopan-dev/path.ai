@@ -209,9 +209,7 @@ export default function ArchitectPage() {
         cx={1}
         cy={1}
         cr={1}
-        className={cn(
-          "[mask-image:linear-gradient(to_bottom_right,white,transparent,transparent)]"
-        )}
+        glow
       />
       <div className="relative max-w-4xl mx-auto">
         {/* Initial State */}
