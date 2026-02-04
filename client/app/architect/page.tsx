@@ -10,6 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Send, CheckCircle2, X } from "lucide-react";
 import { useAppStore, type TreeNode } from "@/lib/store";
+import { DotPattern } from "@/components/ui/dot-pattern";
+import { cn } from "@/lib/utils";
 
 interface Feature {
   id: string;
@@ -200,8 +202,18 @@ export default function ArchitectPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-4xl mx-auto">
+    <div className="relative min-h-screen bg-background p-6 overflow-hidden">
+      <DotPattern
+        width={20}
+        height={20}
+        cx={1}
+        cy={1}
+        cr={1}
+        className={cn(
+          "[mask-image:linear-gradient(to_bottom_right,white,transparent,transparent)]"
+        )}
+      />
+      <div className="relative max-w-4xl mx-auto">
         {/* Initial State */}
         {appState === "initial" && (
           <div className="space-y-8 py-6">
