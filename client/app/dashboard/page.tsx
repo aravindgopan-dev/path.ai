@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Layers, Plus, Rocket } from "lucide-react";
+import { DotPattern } from "@/components/ui/dot-pattern";
 
 export default function Dashboard() {
   // Placeholder project data
@@ -15,9 +16,16 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen bg-background overflow-hidden">
+      <DotPattern
+        width={20}
+        height={20}
+        cx={1}
+        cy={1}
+        cr={1}
+        glow      />
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12 max-w-6xl">
+      <main className="relative container mx-auto px-4 py-12 max-w-6xl">
         {/* Header Section */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold tracking-tight mb-2">
