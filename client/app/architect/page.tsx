@@ -204,46 +204,212 @@ export default function ArchitectPage() {
       <div className="max-w-4xl mx-auto">
         {/* Initial State */}
         {appState === "initial" && (
-          <div className="flex items-center justify-center min-h-[80vh]">
-            <Card className="w-full max-w-md p-8">
-              <div className="space-y-6">
-                <div>
-                  <h1 className="text-4xl font-bold mb-2">Project Architect</h1>
-                  <p className="text-muted-foreground">
-                    Convert your idea into a structured project with AI
-                  </p>
-                </div>
+          <div className="space-y-8 py-6">
+            {/* Header */}
+            <div className="text-center">
+              <h1 className="text-5xl font-bold mb-3">Project Architect</h1>
+              <p className="text-lg text-muted-foreground">
+                Convert your idea into a structured project with AI
+              </p>
+            </div>
 
-                <Textarea
-                  placeholder="Describe what you want to build..."
-                  value={projectIdea}
-                  onChange={(e) => setProjectIdea(e.target.value)}
-                  className="min-h-[150px]"
-                />
-
-                {error && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/30 rounded text-sm text-destructive">
-                    {error}
+            {/* Custom Project Input */}
+            <div className="flex items-center justify-center">
+              <Card className="w-full max-w-2xl p-8">
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <h2 className="text-2xl font-semibold mb-2">Describe Your Project</h2>
+                    <p className="text-muted-foreground">
+                      Tell us what you want to build
+                    </p>
                   </div>
-                )}
 
-                <Button
-                  onClick={handleStartProject}
-                  disabled={isLoading || !projectIdea.trim()}
-                  className="w-full"
-                  size="lg"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Starting...
-                    </>
-                  ) : (
-                    "Start Project"
+                  <Textarea
+                    placeholder="Describe what you want to build..."
+                    value={projectIdea}
+                    onChange={(e) => setProjectIdea(e.target.value)}
+                    className="min-h-[150px]"
+                  />
+
+                  {error && (
+                    <div className="p-3 bg-destructive/10 border border-destructive/30 rounded text-sm text-destructive">
+                      {error}
+                    </div>
                   )}
-                </Button>
+
+                  <Button
+                    onClick={handleStartProject}
+                    disabled={isLoading || !projectIdea.trim()}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Starting...
+                      </>
+                    ) : (
+                      "Start Project"
+                    )}
+                  </Button>
+                </div>
+              </Card>
+            </div>
+
+            {/* Project Suggestions Grid */}
+            <div>
+              <h2 className="text-2xl font-semibold mb-4 text-center">
+                Or choose a project template to get started
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                {/* Row 1 */}
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "An e-commerce platform with product catalog, shopping cart, payment integration, user authentication, and order management system."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">🛒 E-Commerce Platform</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Full-featured online store with cart and payments
+                    </p>
+                  </div>
+                </Card>
+
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "A social media application with user profiles, post creation, likes and comments, real-time notifications, friend connections, and news feed algorithm."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">📱 Social Media App</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Connect people with posts, likes, and comments
+                    </p>
+                  </div>
+                </Card>
+
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "A task management system with project boards, task assignments, due dates, priority levels, team collaboration, and progress tracking."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">✅ Task Manager</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Organize teams with boards and assignments
+                    </p>
+                  </div>
+                </Card>
+
+                {/* Row 2 */}
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "A video streaming platform with content upload, video player, subscriptions, recommendations, playlists, and creator analytics dashboard."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">🎥 Video Streaming</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Upload and share videos with recommendations
+                    </p>
+                  </div>
+                </Card>
+
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "A fitness tracking application with workout logging, calorie counter, progress charts, goal setting, exercise library, and personal trainer matching."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">💪 Fitness Tracker</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Track workouts, calories, and fitness goals
+                    </p>
+                  </div>
+                </Card>
+
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "An online learning platform with course creation, video lectures, quizzes, certificates, student progress tracking, and instructor dashboard."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">📚 Learning Platform</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Create and sell courses with student tracking
+                    </p>
+                  </div>
+                </Card>
+
+                {/* Row 3 */}
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "A real estate listing platform with property search, filters, map view, agent profiles, appointment booking, and mortgage calculator."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">🏠 Real Estate Portal</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Search properties with map and filters
+                    </p>
+                  </div>
+                </Card>
+
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "A food delivery application with restaurant listings, menu browsing, cart system, real-time order tracking, delivery driver assignment, and ratings."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">🍔 Food Delivery</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Order food with real-time delivery tracking
+                    </p>
+                  </div>
+                </Card>
+
+                <Card
+                  className="p-6 cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 hover:border-primary"
+                  onClick={() =>
+                    setProjectIdea(
+                      "A personal finance manager with expense tracking, budget planning, investment portfolio, bill reminders, financial reports, and goal setting."
+                    )
+                  }
+                >
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold">💰 Finance Manager</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Track expenses and manage your budget
+                    </p>
+                  </div>
+                </Card>
               </div>
-            </Card>
+            </div>
           </div>
         )}
 
