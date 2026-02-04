@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Send, CheckCircle2, X } from "lucide-react";
+import { Send, CheckCircle2, X } from "lucide-react";
 import { useAppStore, type TreeNode } from "@/lib/store";
 import { DotPattern } from "@/components/ui/dot-pattern";
 import { cn } from "@/lib/utils";
@@ -255,7 +255,7 @@ export default function ArchitectPage() {
                   >
                     {isLoading ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <span className="loading loading-infinity loading-lg"></span>
                         Starting...
                       </>
                     ) : (
@@ -568,7 +568,7 @@ export default function ArchitectPage() {
               <Button onClick={handleFinalize} disabled={isLoading} className="flex-1">
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <span className="loading loading-infinity loading-lg"></span>
                     Generating...
                   </>
                 ) : (
