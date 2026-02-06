@@ -8,8 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Send, CheckCircle2, X } from "lucide-react";
-import { useAppStore, type TreeNode } from "@/lib/store";
+import { Send, CheckCircle2, X, Map } from "lucide-react";
+import { useAppStore, type TreeNode, type Level } from "@/lib/store";
 import { DotPattern } from "@/components/ui/dot-pattern";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +31,7 @@ interface ProjectSpec {
   projectName: string;
   description: string;
   features: Feature[];
+  levels: Level[];
   designerInput: {
     nodes: TreeNode[];
   };
@@ -180,13 +181,13 @@ export default function ArchitectPage() {
     }
   };
 
-  const handleProceedToDesigner = () => {
+  const handleProceedToRoadmap = () => {
     if (!finalSpec) return;
 
     // Store spec in Zustand store
     setProjectSpec(finalSpec);
 
-    router.push("/designer");
+    router.push("/roadmap");
   };
 
   const handleReset = () => {
@@ -617,8 +618,8 @@ export default function ArchitectPage() {
               <Button variant="outline" onClick={handleReset} disabled={isLoading}>
                 Start New Project
               </Button>
-              <Button onClick={handleProceedToDesigner} disabled={isLoading} className="flex-1">
-                Proceed to Design
+              <Button onClick={handleProceedToRoadmap} disabled={isLoading} className="flex-1">
+                Proceed to Roadmap
               </Button>
             </div>
           </div>
