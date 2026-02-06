@@ -14,6 +14,7 @@ export interface Level {
     title: string;
     description: string;
     files: string[];
+    validationCriteria: string[]; // Key requirements to verify completion
     completed?: boolean;
     locked?: boolean;
 }
@@ -61,6 +62,10 @@ interface AppState {
 
     // Reset all state
     resetAll: () => void;
+
+    // Roadmap/Level Actions
+    completeLevel: (levelNumber: number) => void;
+    unlockLevel: (levelNumber: number) => void;
 }
 
 const defaultFile: FileData = {
@@ -98,6 +103,34 @@ export const useAppStore = create<AppState>()(
                     projectSpec: null,
                     currentFile: defaultFile,
                     fileHistory: [],
+                }),
+
+            completeLevel: (levelNumber) =>
+                set((state) => {
+                    if (!state.projectSpec) return state;
+                    const newLevels = state.projectSpec.levels.map((l) =>
+                        l.level === levelNumber ? { ...l, completed: true } : l
+                    );
+                    return {
+                        projectSpec: {
+                            ...state.projectSpec,
+                            levels: newLevels,
+                        },
+                    };
+                }),
+
+            unlockLevel: (levelNumber) =>
+                set((state) => {
+                    if (!state.projectSpec) return state;
+                    const newLevels = state.projectSpec.levels.map((l) =>
+                        l.level === levelNumber ? { ...l, locked: false } : l
+                    );
+                    return {
+                        projectSpec: {
+                            ...state.projectSpec,
+                            levels: newLevels,
+                        },
+                    };
                 }),
         }),
         {
