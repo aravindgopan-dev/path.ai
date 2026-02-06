@@ -104,14 +104,26 @@ Your task:
    - children: TreeNode[] (if directory)
 
 LEVEL (ROADMAP) GENERATION RULES:
-- Generate 8-12 sequential levels.
-- Each level should represent a meaningful milestone in building the project.
+- Generate AT LEAST 30 sequential levels (tasks).
+- Tasks MUST be granular and low-level milestones.
+- INITIAL LEVELS (1-10) MUST include these specific steps in order:
+  1. Initialize project structure and setup README/documentation.
+  2. Create .env file for environment variables and .env.example.
+  3. Setup package.json with necessary scripts and dependencies.
+  4. Initialize Express server entry point.
+  5. Setup environment variable loading and Port configuration.
+  6. Create 'database' or 'db' folder structure.
+  7. Install and import Mongoose/database driver.
+  8. Setup database connection logic and error handling.
+  9. ...continue with other feature-specific base setups.
+- Each level should represent a SINGLE low-level technical milestone.
 - Each level MUST have:
   - level: number (sequential starting from 1)
   - title: string (short, descriptive)
-  - description: string (what is accomplished in this level)
-  - files: string[] (key files worked on in this level)
-- Ensure levels logically follow the building process (Initialization -> Base Setup -> Auth -> Features -> Final Polish).
+  - description: string (Detailed technical action taken in this level)
+  - files: string[] (The EXACT files created or modified in this level)
+- Ensure levels logically follow the building process (Init -> DB -> Models -> Auth -> Features -> Polish).
+- DO NOT skip steps. Break down features into multiple micro-levels.
 
 FRONTEND STRUCTURE (Always included unless feature-disabled):
 /app or /pages          - Page routes
