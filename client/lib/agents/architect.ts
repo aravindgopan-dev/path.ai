@@ -25,6 +25,7 @@ export interface Level {
   title: string;
   description: string;
   files: string[];
+  validationCriteria: string[];
   completed?: boolean;
   locked?: boolean;
 }
@@ -122,6 +123,7 @@ LEVEL (ROADMAP) GENERATION RULES:
   - title: string (short, descriptive)
   - description: string (Detailed technical action taken in this level)
   - files: string[] (The EXACT files created or modified in this level)
+  - validationCriteria: string[] (3-5 specific technical requirements that must be met to consider this level complete, e.g., "Check if .env exists", "Verify server listens on port 5000")
 - Ensure levels logically follow the building process (Init -> DB -> Models -> Auth -> Features -> Polish).
 - DO NOT skip steps. Break down features into multiple micro-levels.
 
@@ -162,7 +164,8 @@ OUTPUT FORMAT (STRICT JSON, NO MARKDOWN):
       "level": 1,
       "title": "Project Setup",
       "description": "Initialize the project and setup basic structure",
-      "files": ["package.json", "tsconfig.json"]
+      "files": ["package.json", "tsconfig.json"],
+      "validationCriteria": ["package.json contains express dependency", "Main entry point file exists"]
     }
     // ... more levels
   ],
