@@ -9,6 +9,15 @@ export interface Feature {
     category?: string;
 }
 
+export interface Level {
+    level: number;
+    title: string;
+    description: string;
+    files: string[];
+    completed?: boolean;
+    locked?: boolean;
+}
+
 export interface TreeNode {
     name: string;
     type: 'file' | 'directory';
@@ -21,6 +30,7 @@ export interface ProjectSpec {
     projectName: string;
     description: string;
     features: Feature[];
+    levels: Level[];
     designerInput: {
         nodes: TreeNode[];
     };

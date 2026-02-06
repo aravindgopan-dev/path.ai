@@ -14,6 +14,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import './roadmap.css';
+import { useAppStore } from '@/lib/store';
 
 // Level node component - styled like Candy Crush nodes
 const LevelNode = ({ data }: { data: any }) => {
@@ -58,33 +59,19 @@ const nodeTypes = {
 };
 
 export default function RoadmapPage() {
-  // Generate test data with 100 nodes
+  const projectSpec = useAppStore((state) => state.projectSpec);
+  
+  // Use data from store or empty object while loading
   const roadmapData = useMemo(() => {
-    const levels = [];
-    const titles = [
-      "Project Initialization",
-      "Create Express Server",
-      "Database Setup",
-      "Create Models",
-      "Create Services",
-      "Create Controllers",
-      "Create Routes",
-      "Link Routes to Server"
-    ];
-    
-    for (let i = 0; i < 100; i++) {
-      levels.push({
-        title: titles[i % titles.length],
-        description: `Complete level ${i + 1} to unlock the next level.`,
-        files: [`file-${i + 1}.js`]
-      });
+    if (!projectSpec || !projectSpec.levels) {
+      return { total: 0, levels: [] };
     }
     
     return {
-      total: 100,
-      levels
+      total: projectSpec.levels.length,
+      levels: projectSpec.levels
     };
-  }, []);
+  }, [projectSpec]);
 
   // Create a winding path layout like Candy Crush
   const initialNodes: Node[] = useMemo(() => {
@@ -158,8 +145,8 @@ export default function RoadmapPage() {
           title: level.title,
           description: level.description,
           files: level.files,
-          completed: index === 0, // First level unlocked
-          locked: index > 0, // Rest are locked for demo
+          completed: level.completed ?? (index === 0), // Default first level unlocked
+          locked: level.locked ?? (index > 0), 
           sourcePosition,
           targetPosition,
         },
@@ -187,6 +174,17 @@ export default function RoadmapPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
+  if (!projectSpec) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#1a1c38] text-white">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">No Roadmap Found</h2>
+          <p className="text-gray-400">Please start a new project in the Architect first.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="roadmap-container">
       <div className="roadmap-flow">
@@ -209,13 +207,15 @@ export default function RoadmapPage() {
           nodesConnectable={false}
           elementsSelectable={false}
         >
-          <defs>
-            <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#ff6b9d" />
-              <stop offset="50%" stopColor="#c44569" />
-              <stop offset="100%" stopColor="#ff6b9d" />
-            </linearGradient>
-          </defs>
+          <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+            <defs>
+              <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#ff6b9d" />
+                <stop offset="50%" stopColor="#c44569" />
+                <stop offset="100%" stopColor="#ff6b9d" />
+              </linearGradient>
+            </defs>
+          </svg>
           <Background color="#1a1c38" gap={16} />
           <Controls />
         </ReactFlow>
