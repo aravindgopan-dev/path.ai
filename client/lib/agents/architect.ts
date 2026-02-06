@@ -430,7 +430,9 @@ Now design a realistic, feature-driven file structure for this project.`;
     const jsonMatch = (content as string).match(/\{[\s\S]*\}/);
 
     if (jsonMatch) {
+      console.log("[Architect] Raw AI Response:", jsonMatch[0]);
       parsedSpec = JSON.parse(jsonMatch[0]);
+      console.log("[Architect] Parsed Specification:", parsedSpec);
 
       // Use selectedFeatures directly - LLM response features might be incomplete
       parsedSpec.features = selectedFeatures;
