@@ -14,7 +14,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import './roadmap.css';
-import { useAppStore } from '@/lib/store';
+import { useAppStore, FileData } from '@/lib/store';
 import { useRouter } from 'next/navigation';
 import { getSocket } from '@/lib/socket';
 import {
@@ -70,6 +70,31 @@ const LevelNode = ({ data }: { data: any }) => {
 const nodeTypes = {
   levelNode: LevelNode,
 };
+
+// Helper function to determine language from file extension
+function getLanguageFromFileName(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase();
+  const languageMap: Record<string, string> = {
+    'ts': 'typescript',
+    'tsx': 'typescript',
+    'js': 'javascript',
+    'jsx': 'javascript',
+    'json': 'json',
+    'css': 'css',
+    'scss': 'scss',
+    'html': 'html',
+    'md': 'markdown',
+    'py': 'python',
+    'go': 'go',
+    'rs': 'rust',
+    'java': 'java',
+    'c': 'c',
+    'cpp': 'cpp',
+    'yml': 'yaml',
+    'yaml': 'yaml',
+  };
+  return languageMap[ext || ''] || 'plaintext';
+}
 
 export default function RoadmapPage() {
   const router = useRouter();
@@ -396,16 +421,20 @@ export default function RoadmapPage() {
                         
                         // Set up editor
                         if (selectedLevel.files && selectedLevel.files.length > 0) {
-                            const firstFile = selectedLevel.files[0];
-                            const fileData = {
-                                name: firstFile,
-                                language: 'typescript',
+                            const levelFiles = selectedLevel.files.map((fileName: string) => ({
+                                name: fileName,
+                                language: getLanguageFromFileName(fileName),
                                 description: `Working on: ${selectedLevel.title}`,
-                                content: `// Task: ${selectedLevel.description}\n// File: ${firstFile}\n\n// Start coding here...`,
-                                path: firstFile,
-                            };
-                            setCurrentFile(fileData);
-                            addToHistory(fileData);
+                                content: `// Task: ${selectedLevel.description}\n// File: ${fileName}\n\n// Start coding here...`,
+                                path: fileName,
+                            }));
+
+                            useAppStore.getState().setOpenFiles(levelFiles);
+                            useAppStore.getState().setCurrentFile(levelFiles[0]);
+                            
+                            // Add all to history too
+                            levelFiles.forEach((file: FileData) => useAppStore.getState().addToHistory(file));
+                            
                             router.push('/pair-programmer');
                         }
                         setIsModalOpen(false);
