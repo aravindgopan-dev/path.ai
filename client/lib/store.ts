@@ -66,6 +66,10 @@ interface AppState {
     // Roadmap/Level Actions
     completeLevel: (levelNumber: number) => void;
     unlockLevel: (levelNumber: number) => void;
+
+    // Hydration tracking
+    _hasHydrated: boolean;
+    setHasHydrated: (state: boolean) => void;
 }
 
 const defaultFile: FileData = {
@@ -132,6 +136,9 @@ export const useAppStore = create<AppState>()(
                         },
                     };
                 }),
+
+            _hasHydrated: false,
+            setHasHydrated: (state) => set({ _hasHydrated: state }),
         }),
         {
             name: 'app-storage', // Storage key
@@ -142,6 +149,9 @@ export const useAppStore = create<AppState>()(
                 currentFile: state.currentFile,
                 fileHistory: state.fileHistory,
             }),
+            onRehydrateStorage: (state) => {
+                return () => state.setHasHydrated(true);
+            },
         }
     )
 );

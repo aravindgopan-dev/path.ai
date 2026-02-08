@@ -78,6 +78,7 @@ export default function RoadmapPage() {
   const unlockLevel = useAppStore((state) => state.unlockLevel);
   const setCurrentFile = useAppStore((state) => state.setCurrentFile);
   const addToHistory = useAppStore((state) => state.addToHistory);
+  const _hasHydrated = useAppStore((state) => state._hasHydrated);
 
   const [selectedLevel, setSelectedLevel] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -215,10 +216,27 @@ export default function RoadmapPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
+  // Update nodes and edges when initial data changes (e.g., after hydration)
+  useEffect(() => {
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialNodes, initialEdges, setNodes, setEdges]);
+
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     setSelectedLevel(node.data);
     setIsModalOpen(true);
   }, []);
+
+  if (!_hasHydrated) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#1a1c38] text-white">
+        <div className="text-center">
+          <span className="loading loading-spinner loading-lg text-primary mb-4"></span>
+          <p className="text-gray-400">Loading roadmap...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!projectSpec) {
     return (

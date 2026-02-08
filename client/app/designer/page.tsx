@@ -42,6 +42,7 @@ function DesignerContent() {
   const projectSpec = useAppStore((state) => state.projectSpec);
   const setCurrentFile = useAppStore((state) => state.setCurrentFile);
   const addToHistory = useAppStore((state) => state.addToHistory);
+  const _hasHydrated = useAppStore((state) => state._hasHydrated);
   
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['node-0']));
   const [nodeDataMap, setNodeDataMap] = useState<Map<string, { node: TreeNode; depth: number; parentId: string | null }>>(new Map());
@@ -235,7 +236,7 @@ function DesignerContent() {
     setNodes(newNodes);
     setEdges(newEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expandedNodes]);
+  }, [expandedNodes, generateNodesAndEdges]);
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     const hasChildren = node.data.hasChildren;
@@ -332,6 +333,17 @@ function DesignerContent() {
       'yaml': 'yaml',
     };
     return languageMap[ext || ''] || 'plaintext';
+  }
+
+  if (!_hasHydrated) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <span className="loading loading-spinner loading-lg text-primary mb-4"></span>
+          <p className="text-muted-foreground">Loading Designer...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!projectSpec) {

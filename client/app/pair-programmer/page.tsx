@@ -55,6 +55,7 @@ export default function PairProgrammer() {
   const currentFile = useAppStore((state) => state.currentFile);
   const setCurrentFile = useAppStore((state) => state.setCurrentFile);
   const projectSpec = useAppStore((state) => state.projectSpec);
+  const _hasHydrated = useAppStore((state) => state._hasHydrated);
   
   // Editor view ref for CodeMirror (optional, for advanced use)
   const editorViewRef = useRef<any>(null);
@@ -126,6 +127,17 @@ export default function PairProgrammer() {
         return [];
     }
   };
+
+  if (!isMounted || !_hasHydrated) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background text-muted-foreground">
+        <div className="text-center">
+          <span className="loading loading-spinner loading-lg text-primary mb-4"></span>
+          <p>Initializing session...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
