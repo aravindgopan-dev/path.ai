@@ -55,6 +55,12 @@ interface AppState {
     currentFile: FileData | null;
     setCurrentFile: (file: FileData | null) => void;
 
+    // Files currently open in tabs
+    openFiles: FileData[];
+    setOpenFiles: (files: FileData[]) => void;
+    addOpenFile: (file: FileData) => void;
+    removeOpenFile: (fileName: string) => void;
+
     // File history for navigation
     fileHistory: FileData[];
     addToHistory: (file: FileData) => void;
@@ -85,12 +91,41 @@ export const useAppStore = create<AppState>()(
             // Initial state
             projectSpec: null,
             currentFile: defaultFile,
+            openFiles: [defaultFile],
             fileHistory: [],
 
             // Actions
             setProjectSpec: (spec) => set({ projectSpec: spec }),
 
-            setCurrentFile: (file) => set({ currentFile: file }),
+            setCurrentFile: (file) =>
+                set((state) => ({
+                    currentFile: file,
+                    openFiles: file
+                        ? state.openFiles.map(f => f.name === file.name ? file : f)
+                        : state.openFiles
+                })),
+
+            setOpenFiles: (files) => set({ openFiles: files }),
+
+            addOpenFile: (file) =>
+                set((state) => ({
+                    openFiles: state.openFiles.some((f) => f.name === file.name)
+                        ? state.openFiles
+                        : [...state.openFiles, file],
+                })),
+
+            removeOpenFile: (fileName) =>
+                set((state) => {
+                    const newOpenFiles = state.openFiles.filter((f) => f.name !== fileName);
+                    const newCurrentFile =
+                        state.currentFile?.name === fileName
+                            ? newOpenFiles[newOpenFiles.length - 1] || null
+                            : state.currentFile;
+                    return {
+                        openFiles: newOpenFiles,
+                        currentFile: newCurrentFile,
+                    };
+                }),
 
             addToHistory: (file) =>
                 set((state) => ({
@@ -106,6 +141,7 @@ export const useAppStore = create<AppState>()(
                 set({
                     projectSpec: null,
                     currentFile: defaultFile,
+                    openFiles: [defaultFile],
                     fileHistory: [],
                 }),
 
@@ -147,6 +183,7 @@ export const useAppStore = create<AppState>()(
                 // Only persist these fields
                 projectSpec: state.projectSpec,
                 currentFile: state.currentFile,
+                openFiles: state.openFiles,
                 fileHistory: state.fileHistory,
             }),
             onRehydrateStorage: (state) => {

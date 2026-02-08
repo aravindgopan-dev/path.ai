@@ -272,6 +272,7 @@ function DesignerContent() {
       
       // Store file data in Zustand store
       setCurrentFile(fileData);
+      useAppStore.getState().addOpenFile(fileData);
       addToHistory(fileData);
       
       // Navigate to pair programmer

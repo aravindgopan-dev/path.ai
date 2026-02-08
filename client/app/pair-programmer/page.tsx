@@ -22,6 +22,7 @@ import {
 import {  Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
 import { useAppStore } from "@/lib/store"
 import { getSocket } from "@/lib/socket"
 
@@ -54,6 +55,8 @@ export default function PairProgrammer() {
   // Use Zustand store for current file
   const currentFile = useAppStore((state) => state.currentFile);
   const setCurrentFile = useAppStore((state) => state.setCurrentFile);
+  const openFiles = useAppStore((state) => state.openFiles);
+  const removeOpenFile = useAppStore((state) => state.removeOpenFile);
   const projectSpec = useAppStore((state) => state.projectSpec);
   const _hasHydrated = useAppStore((state) => state._hasHydrated);
   
@@ -191,11 +194,37 @@ export default function PairProgrammer() {
           {/* RIGHT PANEL - CODE EDITOR */}
           <ResizablePanel defaultSize={75} minSize={30} className="bg-background overflow-hidden">
             <div className="flex h-full flex-col overflow-hidden">
-              {/* File Tab Header */}
-              <div className="flex items-center gap-2 border-b bg-muted/30 px-4 py-2 text-sm shrink-0">
-                <Code2 size={16} className="text-muted-foreground" />
-                <span className="font-medium">{currentFile?.name || 'untitled.ts'}</span>
-                <span className="text-xs text-muted-foreground ml-2">({currentFile?.language || 'typescript'})</span>
+              {/* File Tabs */}
+              <div className="flex items-center border-b bg-muted/20 overflow-x-auto no-scrollbar shrink-0">
+                {openFiles?.map((file) => (
+                  <div
+                    key={file.name}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 text-xs border-r cursor-pointer transition-colors group",
+                      currentFile?.name === file.name 
+                        ? "bg-background border-b-2 border-b-primary font-medium" 
+                        : "bg-muted/30 hover:bg-muted/50 text-muted-foreground"
+                    )}
+                    onClick={() => setCurrentFile(file)}
+                  >
+                    <Code2 size={12} className={cn(
+                      currentFile?.name === file.name ? "text-primary" : "text-muted-foreground"
+                    )} />
+                    <span className="truncate max-w-[120px]">{file.name}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeOpenFile(file.name);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-muted rounded ml-1 transition-opacity"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
+                {(!openFiles || openFiles.length === 0) && (
+                   <div className="px-4 py-2 text-xs text-muted-foreground">No files open</div>
+                )}
               </div>
 
               {/* Editor */}
