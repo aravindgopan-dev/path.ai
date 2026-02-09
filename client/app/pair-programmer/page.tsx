@@ -13,6 +13,9 @@ import {
   Terminal as TerminalIcon,
   X,
   Code2,
+  Zap,
+  FileCode,
+  Lightbulb,
 } from "lucide-react"
 import {
   ResizableHandle,
@@ -25,6 +28,7 @@ import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { useAppStore } from "@/lib/store"
 import { getSocket } from "@/lib/socket"
+import { type CodeGenerationResponse, type FileCode } from "@/lib/agents/pair-programmer"
 
 const XTerminal = dynamic(
   () => import("@/components/terminal").then((mod) => ({ default: mod.XTerminal })),
@@ -38,7 +42,8 @@ const XTerminal = dynamic(
   }
 )
 
-type SidebarTab = "agent" | "docs"
+type SidebarTab = "docs"
+type CodeMode = "free" | "pseudo" | "scaffold"
 
 interface FileData {
   name: string;
@@ -48,9 +53,13 @@ interface FileData {
 }
 
 export default function PairProgrammer() {
-  const [activeTab, setActiveTab] = useState<SidebarTab>("agent")
+  const [activeTab, setActiveTab] = useState<SidebarTab>("docs")
+  const [codeMode, setCodeMode] = useState<CodeMode>("free")
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const [generatedCode, setGeneratedCode] = useState<CodeGenerationResponse | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [loadingError, setLoadingError] = useState<string | null>(null)
   
   // Use Zustand store for current file
   const currentFile = useAppStore((state) => state.currentFile);
@@ -62,6 +71,121 @@ export default function PairProgrammer() {
   
   // Editor view ref for CodeMirror (optional, for advanced use)
   const editorViewRef = useRef<any>(null);
+  const generationAttemptedRef = useRef(false);
+
+  // Fetch generated code when component mounts
+  useEffect(() => {
+    if (!projectSpec || !openFiles || openFiles.length === 0 || generationAttemptedRef.current) {
+      return;
+    }
+
+    generationAttemptedRef.current = true;
+    generateCode();
+  }, [projectSpec, openFiles, _hasHydrated]);
+
+  const generateCode = async () => {
+    if (!projectSpec || !openFiles || openFiles.length === 0) return;
+
+    setIsLoading(true);
+    setLoadingError(null);
+
+    try {
+      // Find the current level based on open files
+      const levelFileNames = openFiles.map(f => f.name);
+      const currentLevel = projectSpec.levels.find(level => {
+        // Check if the level's files match our open files
+        return level.files.some(f => levelFileNames.includes(f));
+      });
+
+      if (!currentLevel) {
+        setLoadingError("Could not determine current level");
+        setIsLoading(false);
+        return;
+      }
+
+      const response = await fetch("/api/pair-programmer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          levelTitle: currentLevel.title,
+          levelDescription: currentLevel.description,
+          files: currentLevel.files,
+          validationCriteria: currentLevel.validationCriteria,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("API Error Response:", errorData);
+        throw new Error(
+          errorData.error || `API Error: ${response.status} ${response.statusText}`
+        );
+      }
+
+      const result = await response.json();
+      if (result.success && result.data) {
+        setGeneratedCode(result.data);
+        
+        // Populate the generated code into files
+        if (result.data.files && result.data.files.length > 0) {
+          const updatedFiles = openFiles.map(openFile => {
+            const generatedFileData = result.data.files.find(
+              (f: FileCode) => f.name === openFile.name
+            );
+            
+            if (generatedFileData) {
+              return {
+                ...openFile,
+                description: generatedFileData.description,
+                content: openFile.content, // Keep original content, will be updated by mode selection
+              };
+            }
+            return openFile;
+          });
+
+          useAppStore.getState().setOpenFiles(updatedFiles);
+          if (updatedFiles.length > 0) {
+            useAppStore.getState().setCurrentFile(updatedFiles[0]);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error generating code:", error);
+      setLoadingError(
+        error instanceof Error ? error.message : "Unknown error occurred"
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get the code content for the current file based on the selected mode
+  const getVisibleCode = (): string => {
+    if (!currentFile || !generatedCode) {
+      return currentFile?.content || "";
+    }
+
+    const fileCode = generatedCode.files.find(f => f.name === currentFile.name);
+    if (!fileCode) {
+      return currentFile.content;
+    }
+
+    switch (codeMode) {
+      case "free":
+        // Empty for free mode - user starts from scratch
+        return "";
+      case "pseudo":
+        // Show pseudo code
+        return fileCode.pseudoCode;
+      case "scaffold":
+        // Show partial code with blanks to fill in
+        return fileCode.codeSignature;
+      default:
+        return currentFile.content;
+    }
+  };
 
   // Sync file changes to sandbox with debouncing
   useEffect(() => {
@@ -108,6 +232,7 @@ export default function PairProgrammer() {
     setIsMounted(true);
   }, []);
 
+
   // Helper function to get language extension based on file language
   const getLanguageExtension = (language: string) => {
     switch (language?.toLowerCase()) {
@@ -149,25 +274,13 @@ export default function PairProgrammer() {
         {/* Left Icon Sidebar */}
         <div className="flex w-12 flex-col items-center gap-2 border-r bg-muted/50 px-2 py-4">
           <button
-            onClick={() => setActiveTab("agent")}
-            className={`flex h-10 w-10 items-center justify-center rounded transition-colors ${
-              activeTab === "agent"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            title="Agent Mode"
-          >
-            <MessageCircle size={20} />
-          </button>
-
-          <button
             onClick={() => setActiveTab("docs")}
             className={`flex h-10 w-10 items-center justify-center rounded transition-colors ${
               activeTab === "docs"
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
-            title="Documentation"
+            title="Documentation & Task"
           >
             <BookOpen size={20} />
           </button>
@@ -175,18 +288,9 @@ export default function PairProgrammer() {
 
         {/* Resizable Panels */}
         <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-          {/* LEFT PANEL - AI / DOCS */}
+          {/* LEFT PANEL - DOCUMENTATION & TASK INFO */}
           <ResizablePanel defaultSize={25} minSize={20} className="bg-background overflow-hidden">
-            <div className="flex h-full flex-col overflow-hidden">
-              {/* Panel Content */}
-              <div className="flex-1 overflow-hidden">
-                {activeTab === "agent" ? (
-                  <AgentPanel />
-                ) : (
-                  <DocsPanel />
-                )}
-              </div>
-            </div>
+            <DocsPanel generatedCode={generatedCode} isLoading={isLoading} loadingError={loadingError} />
           </ResizablePanel>
 
           <ResizableHandle />
@@ -194,6 +298,50 @@ export default function PairProgrammer() {
           {/* RIGHT PANEL - CODE EDITOR */}
           <ResizablePanel defaultSize={75} minSize={30} className="bg-background overflow-hidden">
             <div className="flex h-full flex-col overflow-hidden">
+              {/* Mode Selection Buttons */}
+              <div className="flex items-center gap-2 border-b bg-muted/20 px-4 py-2 shrink-0">
+                <span className="text-xs font-semibold text-muted-foreground mr-2">Mode:</span>
+                <button
+                  onClick={() => setCodeMode("free")}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors",
+                    codeMode === "free"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                  )}
+                  title="Free coding - write from scratch"
+                >
+                  <Zap size={14} />
+                  Free Code
+                </button>
+                <button
+                  onClick={() => setCodeMode("pseudo")}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors",
+                    codeMode === "pseudo"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                  )}
+                  title="Pseudo mode - write real code above pseudo code"
+                >
+                  <Lightbulb size={14} />
+                  Pseudo Mode
+                </button>
+                <button
+                  onClick={() => setCodeMode("scaffold")}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors",
+                    codeMode === "scaffold"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted hover:bg-muted/80 text-muted-foreground"
+                  )}
+                  title="Scaffold mode - fill in the blanks with your implementation"
+                >
+                  <FileCode size={14} />
+                  Scaffold Mode
+                </button>
+              </div>
+
               {/* File Tabs */}
               <div className="flex items-center border-b bg-muted/20 overflow-x-auto no-scrollbar shrink-0">
                 {openFiles?.map((file) => (
@@ -236,7 +384,7 @@ export default function PairProgrammer() {
                 ) : currentFile ? (
                   <CodeMirror
                     key={currentFile.path || 'untitled'}
-                    value={currentFile.content}
+                    value={getVisibleCode()}
                     height="100%"
                     extensions={getLanguageExtension(currentFile.language)}
                     onChange={(value) => {
@@ -344,128 +492,126 @@ export default function PairProgrammer() {
   )
 }
 
-/* Agent Mode Panel */
-function AgentPanel() {
-  return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col gap-0.5 border-b bg-muted/30 px-3 py-2 shrink-0">
-        <h2 className="text-sm font-semibold">AI Pair Programmer</h2>
-        <p className="text-xs text-muted-foreground">Hints, not answers</p>
-      </div>
-
-      {/* Chat Area - Scrollable */}
-      <div className="flex-1 overflow-y-auto space-y-2 p-3 text-xs">
-        {/* Assistant Message */}
-        <div className="flex gap-2">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary text-[10px] font-semibold text-primary-foreground">
-            AI
-          </div>
-          <div className="flex-1 min-w-0">
-            <Card className="rounded-lg bg-muted p-2">
-              <p className="text-xs leading-tight">
-                What should happen when there are no matching tasks?
-              </p>
-            </Card>
-          </div>
-        </div>
-
-        {/* User Message */}
-        <div className="flex gap-2 justify-end">
-          <div className="flex-1 max-w-xs min-w-0">
-            <Card className="rounded-lg bg-primary p-2">
-              <p className="text-xs text-primary-foreground leading-tight">
-                Return an empty array?
-              </p>
-            </Card>
-          </div>
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-secondary text-[10px] font-semibold text-secondary-foreground">
-            U
-          </div>
-        </div>
-
-        {/* Assistant Message */}
-        <div className="flex gap-2">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary text-[10px] font-semibold text-primary-foreground">
-            AI
-          </div>
-          <div className="flex-1 min-w-0">
-            <Card className="rounded-lg bg-muted p-2">
-              <p className="text-xs leading-tight">
-                That's one approach. What are the pros and cons?
-              </p>
-            </Card>
-          </div>
-        </div>
-      </div>
-
-      {/* Input Area */}
-      <div className="border-t bg-muted/30 px-3 py-2 shrink-0">
-        <input
-          type="text"
-          placeholder="Ask for a hint..."
-          disabled
-          className="w-full rounded border bg-muted px-2 py-1 text-xs text-muted-foreground placeholder-muted-foreground/50 disabled:opacity-50"
-        />
-      </div>
-    </div>
-  )
+/* Documentation and Task Panel */
+interface DocsPanelProps {
+  generatedCode: CodeGenerationResponse | null;
+  isLoading: boolean;
+  loadingError: string | null;
 }
 
-/* Documentation Panel */
-function DocsPanel() {
+function DocsPanel({ generatedCode, isLoading, loadingError }: DocsPanelProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <div className="flex flex-col gap-0.5 border-b bg-muted/30 px-3 py-2 shrink-0">
-        <h2 className="text-sm font-semibold">Documentation</h2>
-        <p className="text-xs text-muted-foreground">getTasks.controller.ts</p>
+        <h2 className="text-sm font-semibold">Level Objective</h2>
+        <p className="text-xs text-muted-foreground">
+          {generatedCode?.levelTitle || "Loading..."}
+        </p>
       </div>
 
       {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto space-y-3 p-3 text-xs">
-        {/* Section */}
-        <div className="space-y-1">
-          <h3 className="font-semibold text-xs">Concept: Filter Operations</h3>
-          <p className="leading-tight text-muted-foreground">
-            Filter operations allow you to select elements from a collection that match specific criteria.
-          </p>
-        </div>
-
-        <Separator className="my-1" />
-
-        {/* Section */}
-        <div className="space-y-1">
-          <h3 className="font-semibold text-xs">What You're Building</h3>
-          <p className="leading-tight text-muted-foreground">
-            Implement a controller method that retrieves and filters tasks based on user permissions and status.
-          </p>
-        </div>
-
-        <Separator className="my-1" />
-
-        {/* Section */}
-        <div className="space-y-1">
-          <h3 className="font-semibold text-xs">Objectives</h3>
-          <ul className="space-y-0.5 text-muted-foreground list-disc list-inside">
-            <li>Use array methods</li>
-            <li>Implement conditional logic</li>
-            <li>Handle edge cases</li>
-          </ul>
-        </div>
-
-        <Separator className="my-1" />
-
-        {/* Section */}
-        <div className="space-y-1">
-          <h3 className="font-semibold text-xs">Hints</h3>
-          <div className="space-y-0.5 text-muted-foreground">
-            <p>💡 Think about data structure first</p>
-            <p>💡 Consider filter order</p>
-            <p>💡 Test edge cases</p>
+      <div className="flex-1 overflow-y-auto space-y-4 p-4 text-xs">
+        {isLoading && (
+          <div className="flex flex-col items-center justify-center h-full">
+            <span className="loading loading-spinner loading-lg text-primary mb-4"></span>
+            <p className="text-muted-foreground">Generating your learning content...</p>
           </div>
-        </div>
+        )}
+
+        {loadingError && (
+          <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/50">
+            <p className="text-red-400">Error: {loadingError}</p>
+            <p className="text-xs text-red-300 mt-1">Please refresh and try again</p>
+          </div>
+        )}
+
+        {!isLoading && generatedCode && (
+          <>
+            {/* Description Section */}
+            <div className="space-y-2">
+              <h3 className="font-semibold text-xs text-primary uppercase tracking-wider">
+                What You'll Build
+              </h3>
+              <p className="leading-relaxed text-muted-foreground bg-black/20 p-3 rounded-lg border border-white/5">
+                {generatedCode.description}
+              </p>
+            </div>
+
+            <Separator className="my-2" />
+
+            {/* Approach Section */}
+            <div className="space-y-2">
+              <h3 className="font-semibold text-xs text-primary uppercase tracking-wider">
+                Approach
+              </h3>
+              <p className="leading-relaxed text-muted-foreground bg-black/20 p-3 rounded-lg border border-white/5">
+                {generatedCode.pseudoCodeExplanation}
+              </p>
+            </div>
+
+            <Separator className="my-2" />
+
+            {/* Files Section */}
+            <div className="space-y-2">
+              <h3 className="font-semibold text-xs text-primary uppercase tracking-wider">
+                Files You'll Work On
+              </h3>
+              <div className="space-y-2">
+                {generatedCode.files.map((file) => (
+                  <div key={file.name} className="p-2 rounded-lg bg-black/20 border border-white/5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-white">{file.name}</span>
+                      {file.isConfigFile && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                          Config
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{file.description}</p>
+                    
+                    {/* Command Instructions for config files */}
+                    {file.isConfigFile && file.commandInstructions && (
+                      <div className="mt-2 p-2 bg-black/40 rounded border border-blue-500/20">
+                        <p className="text-[10px] text-blue-400 font-mono">
+                          Run: <span className="text-white">{file.commandInstructions}</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Separator className="my-2" />
+
+            {/* Hints Section */}
+            <div className="space-y-2">
+              <h3 className="font-semibold text-xs text-primary uppercase tracking-wider">
+                💡 Learning Tips
+              </h3>
+              <ul className="space-y-1.5 text-muted-foreground">
+                <li className="flex gap-2">
+                  <span>•</span>
+                  <span><span className="text-blue-400 font-semibold">Scaffold Mode:</span> Partial code with blanks you fill in (70-80% your work)</span>
+                </li>
+                <li className="flex gap-2">
+                  <span>•</span>
+                  <span><span className="text-purple-400 font-semibold">Pseudo Mode:</span> Logic flow without implementation details</span>
+                </li>
+                <li className="flex gap-2">
+                  <span>•</span>
+                  <span><span className="text-yellow-400 font-semibold">Free Mode:</span> Write from scratch with zero assistance</span>
+                </li>
+                <li className="flex gap-2">
+                  <span>•</span>
+                  <span>Look for TODO comments and blank sections as your starting points</span>
+                </li>
+              </ul>
+            </div>
+          </>
+        )}
       </div>
     </div>
-  )
+  );
 }
