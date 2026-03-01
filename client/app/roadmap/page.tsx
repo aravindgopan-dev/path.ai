@@ -1,22 +1,9 @@
 'use client';
 
-import React, { useCallback, useMemo, useState, useEffect } from 'react';
-import ReactFlow, {
-  Node,
-  Edge,
-  Background,
-  Controls,
-  MiniMap,
-  useNodesState,
-  useEdgesState,
-  Position,
-  Handle,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+import React, { useState, useEffect } from 'react';
 import './roadmap.css';
-import { useAppStore, FileData } from '@/lib/store';
+import { useAppStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
-import { getSocket } from '@/lib/socket';
 import {
   Dialog,
   DialogContent,
@@ -24,435 +11,462 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Star, Terminal, FileCode, CheckSquare } from "lucide-react";
+import {
+  Settings,
+  BookOpen,
+  Code2,
+  CheckCircle2,
+  Loader2,
+  Lock,
+  FileCode,
+  Lightbulb,
+  ChevronRight,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  getFlatRoadmap,
+  type RoadmapNode,
+} from "@/lib/agents-api";
 
-// Level node component - styled like Candy Crush nodes
-const LevelNode = ({ data }: { data: any }) => {
-  const isCompleted = data.completed;
-  const isLocked = data.locked;
+// ── TYPE META ────────────────────────────────────
+const TYPE_META: Record<string, {
+  label: string;
+  icon: React.ElementType;
+  gradient: string;
+  color: string;
+  lightColor: string;
+}> = {
+  setup: {
+    label: "Setup",
+    icon: Settings,
+    gradient: "from-emerald-500 to-teal-600",
+    color: "text-emerald-400",
+    lightColor: "bg-emerald-500/10",
+  },
+  learn: {
+    label: "Learning",
+    icon: BookOpen,
+    gradient: "from-blue-500 to-indigo-600",
+    color: "text-blue-400",
+    lightColor: "bg-blue-500/10",
+  },
+  code: {
+    label: "Coding",
+    icon: Code2,
+    gradient: "from-amber-500 to-orange-600",
+    color: "text-amber-400",
+    lightColor: "bg-amber-500/10",
+  },
+};
+
+// ── NODE CARD COMPONENT ──────────────────────────
+function PathNode({
+  node,
+  index,
+  isNext,
+  onClick,
+}: {
+  node: RoadmapNode;
+  index: number;
+  isNext: boolean;
+  onClick: (node: RoadmapNode) => void;
+}) {
+  const meta = TYPE_META[node.type] ?? TYPE_META.code;
+  const Icon = meta.icon;
 
   return (
-    <>
-      {data.targetPosition && (
-        <Handle type="target" position={data.targetPosition} style={{ opacity: 0 }} />
+    <div className="roadmap-path-item">
+      {/* Connector line before node */}
+      {index > 0 && (
+        <div className={cn(
+          "roadmap-connector",
+          node.completed && "roadmap-connector-completed",
+          node.locked && "roadmap-connector-locked",
+        )} />
       )}
-      <div className={`level-node ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}>
-        <div className="level-number">{data.level}</div>
-        <div className="level-stars">
-          {[1, 2, 3].map((star) => (
-            <span key={star} className={`star ${isCompleted ? 'filled' : ''}`}>
-              ★
-            </span>
-          ))}
-        </div>
-        <div className="level-title">{data.title}</div>
-        {!isLocked && (
-          <div className="level-description">{data.description}</div>
+
+      {/* Node container */}
+      <div
+        className={cn(
+          "roadmap-node",
+          node.locked && "roadmap-node-locked",
+          node.completed && "roadmap-node-completed",
+          isNext && !node.locked && !node.completed && "roadmap-node-next",
         )}
-        {data.files && data.files.length > 0 && (
-          <div className="level-files">
-            {data.files.map((file: string, idx: number) => (
-              <div key={idx} className="file-tag">{file}</div>
-            ))}
+        onClick={() => !node.locked && onClick(node)}
+      >
+        {/* Left indicator bar */}
+        <div className={cn(
+          "roadmap-node-bar",
+          !node.locked && `bg-gradient-to-b ${meta.gradient}`,
+          node.locked && "bg-zinc-700",
+          node.completed && "bg-emerald-500",
+        )} />
+
+        {/* Main content */}
+        <div className="roadmap-node-content">
+          {/* Level number and icon */}
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "roadmap-node-badge",
+              !node.locked && meta.lightColor,
+              node.locked && "bg-zinc-800",
+              node.completed && "bg-emerald-500/10",
+            )}>
+              {node.completed ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+              ) : node.locked ? (
+                <Lock className="h-5 w-5 text-zinc-500" />
+              ) : (
+                <>
+                  <Icon className={cn("h-5 w-5", meta.color)} />
+                  <span className="text-sm font-bold text-foreground/80">{index + 1}</span>
+                </>
+              )}
+            </div>
+
+            {/* Title and type badge */}
+            <div className="flex-1 min-w-0">
+              <h3 className={cn(
+                "roadmap-node-title",
+                node.locked && "text-muted-foreground",
+              )}>
+                {node.title}
+              </h3>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
+                  {meta.label}
+                </Badge>
+                {node.completed && (
+                  <Badge className="text-[10px] px-1.5 py-0 h-5 bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                    Done
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* CTA Icon */}
+            {!node.locked && (
+              <ChevronRight className={cn(
+                "h-5 w-5 text-muted-foreground transition-colors",
+                isNext && "text-primary",
+              )} />
+            )}
           </div>
-        )}
+        </div>
       </div>
-      {data.sourcePosition && (
-        <Handle type="source" position={data.sourcePosition} style={{ opacity: 0 }} />
-      )}
-    </>
+    </div>
   );
-};
-
-const nodeTypes = {
-  levelNode: LevelNode,
-};
-
-// Helper function to determine language from file extension
-function getLanguageFromFileName(fileName: string): string {
-  const ext = fileName.split('.').pop()?.toLowerCase();
-  const languageMap: Record<string, string> = {
-    'ts': 'typescript',
-    'tsx': 'typescript',
-    'js': 'javascript',
-    'jsx': 'javascript',
-    'json': 'json',
-    'css': 'css',
-    'scss': 'scss',
-    'html': 'html',
-    'md': 'markdown',
-    'py': 'python',
-    'go': 'go',
-    'rs': 'rust',
-    'java': 'java',
-    'c': 'c',
-    'cpp': 'cpp',
-    'yml': 'yaml',
-    'yaml': 'yaml',
-  };
-  return languageMap[ext || ''] || 'plaintext';
 }
 
+// ── MAIN ROADMAP COMPONENT ──────────────────────
 export default function RoadmapPage() {
   const router = useRouter();
-  const projectSpec = useAppStore((state) => state.projectSpec);
-  const completeLevel = useAppStore((state) => state.completeLevel);
-  const unlockLevel = useAppStore((state) => state.unlockLevel);
-  const setCurrentFile = useAppStore((state) => state.setCurrentFile);
-  const addToHistory = useAppStore((state) => state.addToHistory);
-  const _hasHydrated = useAppStore((state) => state._hasHydrated);
+  const blueprint = useAppStore((s) => s.blueprint);
+  const roadmapNodes = useAppStore((s) => s.roadmapNodes);
+  const setRoadmapNodes = useAppStore((s) => s.setRoadmapNodes);
+  const projectId = useAppStore((s) => s.projectId);
+  const setActiveNodeId = useAppStore((s) => s.setActiveNodeId);
+  const _hasHydrated = useAppStore((s) => s._hasHydrated);
 
-  const [selectedLevel, setSelectedLevel] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<RoadmapNode | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Sync with sandbox (persistence as in designer agent)
+  // Fetch roadmap on mount
   useEffect(() => {
-    if (!projectSpec) return;
-    const socket = getSocket();
-    
-    console.log('[Roadmap] Syncing with sandbox...');
-    socket.emit('create-project', projectSpec);
+    if (!_hasHydrated) return;
 
-    socket.on('project-created', (response: any) => {
-      if (response.success) {
-        console.log('[Roadmap] Project ready in sandbox:', response.path);
-      }
-    });
+    let cancelled = false;
 
-    return () => {
-      socket.off('project-created');
-    };
-  }, [projectSpec]);
-  
-  // Use data from store or empty object while loading
-  const roadmapData = useMemo(() => {
-    if (!projectSpec || !projectSpec.levels) {
-      return { total: 0, levels: [] };
-    }
-    
-    return {
-      total: projectSpec.levels.length,
-      levels: projectSpec.levels
-    };
-  }, [projectSpec]);
-
-  // Create a winding path layout like Candy Crush
-  const initialNodes: Node[] = useMemo(() => {
-    const nodes: Node[] = [];
-    // Calculate spacing to use full width - 3 nodes per row with padding
-    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
-    const horizontalSpacing = (viewportWidth - 400) / 2; // Divide available space by 2 (for 3 nodes)
-    const verticalSpacing = 250;   // Vertical space
-    
-    roadmapData.levels.forEach((level, index) => {
-      // Create a serpentine (S-shaped) path
-      const row = Math.floor(index / 3);
-      const col = index % 3;
-      
-      // Alternate direction every row
-      const direction = row % 2 === 0 ? 1 : -1;
-      const xPos = direction === 1 ? col * horizontalSpacing : (2 - col) * horizontalSpacing;
-      
-      // Reverse Y position: higher levels go up
-      const yPos = (Math.floor(roadmapData.levels.length / 3) - row) * verticalSpacing;
-      
-      // Determine handle positions based on position in path
-      let sourcePosition = null;
-      let targetPosition = null;
-      
-      const isLastInRow = col === 2;
-      const isFirstInRow = col === 0;
-      const isLastNode = index === roadmapData.levels.length - 1;
-      
-      if (row % 2 === 0) {
-        // Even rows: moving right (1 → 2 → 3, 7 → 8)
-        // First node in row
-        if (isFirstInRow) {
-          // Very first node (index 0) has no target
-          // Other first nodes receive from below
-          targetPosition = index === 0 ? null : Position.Bottom;
-          sourcePosition = isLastNode ? null : Position.Right;
-        } else if (isLastInRow) {
-          // Last node in row: receives from left, connects upward
-          targetPosition = Position.Left;
-          sourcePosition = isLastNode ? null : Position.Top;
-        } else {
-          // Middle nodes: receive from left, connect right
-          targetPosition = Position.Left;
-          sourcePosition = Position.Right;
+    const fetchRoadmap = async () => {
+      if (!projectId) return;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const { roadmap } = await getFlatRoadmap(projectId);
+        if (!cancelled) {
+          setRoadmapNodes(roadmap);
         }
-      } else {
-        // Odd rows: moving left (6 ← 5 ← 4)
-        // Visual layout is reversed, so col=0 is rightmost
-        if (isFirstInRow) {
-          // col=0 means rightmost visually, receives from below
-          targetPosition = Position.Bottom;
-          sourcePosition = isLastNode ? null : Position.Left;
-        } else if (isLastInRow) {
-          // col=2 means leftmost visually, connects upward
-          targetPosition = Position.Right;
-          sourcePosition = isLastNode ? null : Position.Top;
-        } else {
-          // Middle nodes
-          targetPosition = Position.Right;
-          sourcePosition = Position.Left;
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load roadmap");
         }
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
-      
-      nodes.push({
-        id: `level-${index + 1}`,
-        type: 'levelNode',
-        position: { x: xPos + 100, y: yPos + 100 },
-        data: {
-          level: index + 1,
-          title: level.title,
-          description: level.description,
-          files: level.files,
-          validationCriteria: level.validationCriteria,
-          completed: level.completed ?? (index === 0), // Default first level unlocked
-          locked: level.locked ?? (index > 0), 
-          sourcePosition,
-          targetPosition,
-        },
-      });
-    });
-    
-    return nodes;
-  }, [roadmapData]);
+    };
 
-  const initialEdges: Edge[] = useMemo(() => {
-    const edges: Edge[] = [];
-    
-    for (let i = 0; i < roadmapData.levels.length - 1; i++) {
-      edges.push({
-        id: `edge-${i}`,
-        source: `level-${i + 1}`,
-        target: `level-${i + 2}`,
-        type: 'smoothstep',
-      });
-    }
-    
-    return edges;
-  }, [roadmapData]);
+    fetchRoadmap();
+    return () => { cancelled = true; };
+  }, [_hasHydrated, projectId, setRoadmapNodes]);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  // Calculate stats
+  const totalProgress = roadmapNodes.length > 0
+    ? Math.round((roadmapNodes.filter((n) => n.completed).length / roadmapNodes.length) * 100)
+    : 0;
 
-  // Update nodes and edges when initial data changes (e.g., after hydration)
-  useEffect(() => {
-    setNodes(initialNodes);
-    setEdges(initialEdges);
-  }, [initialNodes, initialEdges, setNodes, setEdges]);
+  // Find next unlockable node
+  const nextUnlockableIdx = roadmapNodes.findIndex((n) => !n.completed && !n.locked);
 
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
-    setSelectedLevel(node.data);
+  const handleNodeClick = (node: RoadmapNode) => {
+    setSelectedNode(node);
     setIsModalOpen(true);
-  }, []);
+  };
 
+  const handleStartNode = (node: RoadmapNode) => {
+    setActiveNodeId(node.id);
+    setIsModalOpen(false);
+    router.push(`/pair-programmer?id=${node.id}`);
+  };
+
+  // ── Loading states ──────────────────────────────
   if (!_hasHydrated) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#1a1c38] text-white">
-        <div className="text-center">
-          <span className="loading loading-spinner loading-lg text-primary mb-4"></span>
-          <p className="text-gray-400">Loading roadmap...</p>
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!projectId) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold">No Project Found</h2>
+          <p className="text-muted-foreground">
+            Please start a new project in the Architect first.
+          </p>
+          <Button onClick={() => router.push("/architect")}>Go to Architect</Button>
         </div>
       </div>
     );
   }
 
-  if (!projectSpec) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#1a1c38] text-white">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-4">No Roadmap Found</h2>
-          <p className="text-gray-400">Please start a new project in the Architect first.</p>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" />
+          <p className="text-muted-foreground">Loading your roadmap...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold text-destructive">Error</h2>
+          <p className="text-muted-foreground">{error}</p>
+          <Button onClick={() => router.push("/skill-level")}>Go Back</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="roadmap-container">
-      <div className="roadmap-flow">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          nodeTypes={nodeTypes}
-          fitView
-          minZoom={1}
-          maxZoom={1}
-          zoomOnScroll={false}
-          zoomOnPinch={false}
-          zoomOnDoubleClick={false}
-          panOnDrag={false}
-          panOnScroll={true}
-          panOnScrollSpeed={0.5}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-        >
-          <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-            <defs>
-              <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#ff6b9d" />
-                <stop offset="50%" stopColor="#c44569" />
-                <stop offset="100%" stopColor="#ff6b9d" />
-              </linearGradient>
-            </defs>
-          </svg>
-          <Background color="#1a1c38" gap={16} />
-          <Controls />
-        </ReactFlow>
+    <div className="roadmap-page-new">
+      {/* Header */}
+      <div className="roadmap-header-new">
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          <h1 className="text-4xl font-bold tracking-tight mb-2">
+            {blueprint?.name ?? "Your Learning Path"}
+          </h1>
+          <p className="text-muted-foreground text-lg mb-6">
+            Complete each level to unlock the next one
+          </p>
+
+          {/* Progress bar */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs font-medium">
+              <span className="text-muted-foreground">Progress</span>
+              <span className={totalProgress === 100 ? "text-emerald-400" : "text-primary"}>
+                {totalProgress}%
+              </span>
+            </div>
+            <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  "h-full transition-all duration-500 rounded-full",
+                  totalProgress === 100
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-500"
+                    : "bg-gradient-to-r from-purple-500 to-pink-500"
+                )}
+                style={{ width: `${totalProgress}%` }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-[500px] bg-[#1a1c38] border-border/20 text-white overflow-hidden p-0">
-          {selectedLevel && (
-            <div className="flex flex-col h-full">
-              {/* Header with Background Pattern */}
-              <div className="relative p-6 bg-gradient-to-br from-[#2a2d5a] to-[#1a1c38] border-b border-border/10">
-                <div className="absolute top-4 right-4 flex gap-1">
-                  {[1, 2, 3].map((s) => (
-                    <Star
-                      key={s}
-                      className={cn(
-                        "h-5 w-5",
-                        selectedLevel.completed ? "text-yellow-400 fill-yellow-400" : "text-white/20"
-                      )}
-                    />
-                  ))}
-                </div>
-                
-                <div className="flex items-center gap-4 mb-2">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/20 border border-primary/30 text-2xl font-black text-primary">
-                    {selectedLevel.level}
-                  </div>
-                  <Badge variant={selectedLevel.completed ? "default" : "secondary"} className="text-xs uppercase tracking-wider font-bold">
-                    {selectedLevel.completed ? "Unlocked" : "Locked"}
-                  </Badge>
-                </div>
-                
-                <DialogTitle className="text-2xl font-black tracking-tight mb-1">
-                  {selectedLevel.title}
-                </DialogTitle>
-                <div className="text-white/60 text-sm leading-relaxed">
-                  Level {selectedLevel.level} of {roadmapData.total}
-                </div>
-              </div>
+      {/* Roadmap path */}
+      <div className="roadmap-path-container">
+        <div className="max-w-2xl mx-auto px-6 py-12">
+          {roadmapNodes.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">No levels found</p>
+            </div>
+          ) : (
+            <div className="space-y-0">
+              {roadmapNodes.map((node, idx) => (
+                <PathNode
+                  key={node.id}
+                  node={node}
+                  index={idx}
+                  isNext={idx === nextUnlockableIdx}
+                  onClick={handleNodeClick}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
-              {/* Content Area */}
-              <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                {/* Task Description */}
+      {/* Back button */}
+      <div className="roadmap-footer-new">
+        <Button
+          variant="outline"
+          onClick={() => router.push("/skill-level")}
+          className="gap-2"
+        >
+          ← Back to Skills
+        </Button>
+      </div>
+
+      {/* Detail Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          {selectedNode && (() => {
+            const meta = TYPE_META[selectedNode.type] ?? TYPE_META.code;
+            const Icon = meta.icon;
+            return (
+              <div className="space-y-6">
+                <DialogHeader>
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className={cn(
+                      "p-3 rounded-lg bg-gradient-to-br shadow-lg",
+                      meta.gradient,
+                    )}>
+                      <Icon className="h-6 w-6 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <DialogTitle className="text-2xl">{selectedNode.title}</DialogTitle>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline" className="capitalize text-xs">
+                          {meta.label}
+                        </Badge>
+                        {selectedNode.completed && (
+                          <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-xs">
+                            <CheckCircle2 className="h-3 w-3 mr-1" /> Completed
+                          </Badge>
+                        )}
+                        {selectedNode.locked && (
+                          <Badge className="bg-zinc-500/20 text-zinc-400 border-zinc-500/30 text-xs">
+                            <Lock className="h-3 w-3 mr-1" /> Locked
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                {/* Description */}
                 <div>
-                  <h4 className="flex items-center gap-2 text-primary font-bold text-sm uppercase tracking-wider mb-3">
-                    <Terminal className="h-4 w-4" />
+                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                    <Lightbulb className="h-4 w-4 text-amber-400" />
                     Objective
                   </h4>
-                  <p className="text-white/80 leading-relaxed text-sm bg-black/20 p-4 rounded-xl border border-white/5">
-                    {selectedLevel.description}
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    {selectedNode.description}
                   </p>
                 </div>
 
-                {/* Files Involved */}
-                {selectedLevel.files && selectedLevel.files.length > 0 && (
+                {/* Files */}
+                {selectedNode.files && selectedNode.files.length > 0 && (
                   <div>
-                    <h4 className="flex items-center gap-2 text-primary font-bold text-sm uppercase tracking-wider mb-3">
-                      <FileCode className="h-4 w-4" />
-                      Files Involved
-                    </h4>
+                    <h4 className="text-sm font-semibold mb-3">Files Involved</h4>
                     <div className="flex flex-wrap gap-2">
-                      {selectedLevel.files.map((file: string, idx: number) => (
-                        <div key={idx} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-medium text-white/90">
-                          <div className="w-1.5 h-1.5 rounded-full bg-primary/50" />
-                          {file}
-                        </div>
+                      {selectedNode.files.map((f) => (
+                        <Badge key={f} variant="secondary" className="font-mono text-[11px]">
+                          <FileCode className="h-3 w-3 mr-1" />{f}
+                        </Badge>
                       ))}
                     </div>
                   </div>
                 )}
 
                 {/* Validation Criteria */}
-                {selectedLevel.validationCriteria && selectedLevel.validationCriteria.length > 0 && (
+                {selectedNode.validationCriteria && selectedNode.validationCriteria.length > 0 && (
                   <div>
-                    <h4 className="flex items-center gap-2 text-primary font-bold text-sm uppercase tracking-wider mb-3">
-                      <CheckSquare className="h-4 w-4" />
-                      Validation Criteria
-                    </h4>
-                    <ul className="space-y-2.5">
-                      {selectedLevel.validationCriteria.map((criteria: string, idx: number) => (
-                        <li key={idx} className="flex items-start gap-3 p-3 rounded-xl bg-black/20 border border-white/5 group transition-colors hover:border-primary/20">
-                          <div className="mt-1 h-2 w-2 rounded-full border border-primary/50 group-hover:bg-primary/50 transition-colors shrink-0" />
-                          <span className="text-sm text-white/70">{criteria}</span>
+                    <h4 className="text-sm font-semibold mb-3">What You'll Learn</h4>
+                    <ul className="space-y-2">
+                      {selectedNode.validationCriteria.map((v, i) => (
+                        <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 mt-1.5 shrink-0" />
+                          {v}
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
-              </div>
 
-              {/* Footer */}
-              <div className="p-6 bg-black/20 border-t border-border/10 flex gap-3">
-                {selectedLevel.locked ? (
-                  <Button 
-                    className="flex-1 font-bold h-12 rounded-xl"
-                    variant="secondary"
-                    onClick={() => {
-                        unlockLevel(selectedLevel.level);
-                        setIsModalOpen(false);
-                    }}
-                  >
-                    Unlock Level
-                  </Button>
-                ) : (
-                  <Button 
-                    className="flex-1 font-bold h-12 rounded-xl" 
-                    onClick={() => {
-                        // Mark as completed and open editor
-                        completeLevel(selectedLevel.level);
-                        if (selectedLevel.level < roadmapData.total) {
-                            unlockLevel(selectedLevel.level + 1);
-                        }
-                        
-                        // Set up editor
-                        if (selectedLevel.files && selectedLevel.files.length > 0) {
-                            const levelFiles = selectedLevel.files.map((fileName: string) => ({
-                                name: fileName,
-                                language: getLanguageFromFileName(fileName),
-                                description: `Working on: ${selectedLevel.title}`,
-                                content: `// Task: ${selectedLevel.description}\n// File: ${fileName}\n\n// Start coding here...`,
-                                path: fileName,
-                            }));
-
-                            useAppStore.getState().setOpenFiles(levelFiles);
-                            useAppStore.getState().setCurrentFile(levelFiles[0]);
-                            
-                            // Add all to history too
-                            levelFiles.forEach((file: FileData) => useAppStore.getState().addToHistory(file));
-                            
-                            router.push('/pair-programmer');
-                        }
-                        setIsModalOpen(false);
-                    }}
-                  >
-                    {selectedLevel.completed ? "Continue Coding" : "Start Level"}
-                  </Button>
+                {/* Dependencies */}
+                {selectedNode.dependencies && selectedNode.dependencies.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3">Prerequisites</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedNode.dependencies.map((d) => {
+                        const depNode = roadmapNodes.find((n) => n.id === d);
+                        return (
+                          <Badge key={d} variant="secondary" className="text-xs">
+                            {depNode?.title ?? d}
+                            {depNode?.completed && (
+                              <CheckCircle2 className="h-3 w-3 ml-1 text-emerald-400" />
+                            )}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
-                <Button 
-                  variant="outline" 
-                  className="flex-1 font-bold h-12 rounded-xl border-white/10 hover:bg-white/5"
-                  onClick={() => setIsModalOpen(false)}
-                >
-                  Close
-                </Button>
+
+                <Separator />
+
+                {/* Action buttons */}
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setIsModalOpen(false)}>
+                    Close
+                  </Button>
+                  <Button
+                    onClick={() => handleStartNode(selectedNode)}
+                    disabled={selectedNode.locked}
+                    className={cn(
+                      "gap-2",
+                      !selectedNode.locked && "bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white border-0",
+                    )}
+                  >
+                    {selectedNode.locked ? (
+                      <><Lock className="h-4 w-4" /> Locked</>
+                    ) : selectedNode.completed ? (
+                      <><CheckCircle2 className="h-4 w-4" /> Revisit</>
+                    ) : (
+                      <>
+                        <ChevronRight className="h-4 w-4" />
+                        {selectedNode.type === "code" ? "Start Coding" :
+                         selectedNode.type === "learn" ? "Start Learning" :
+                         selectedNode.type === "setup" ? "Start Setup" : "Start"}
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

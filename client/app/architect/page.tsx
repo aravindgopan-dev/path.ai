@@ -12,6 +12,11 @@ import { Send, CheckCircle2, X, Map } from "lucide-react";
 import { useAppStore, type TreeNode, type Level } from "@/lib/store";
 import { DotPattern } from "@/components/ui/dot-pattern";
 import { cn } from "@/lib/utils";
+import {
+  analyseIdea,
+  generateBlueprint,
+  type AgentFeature,
+} from "@/lib/agents-api";
 
 interface Feature {
   id: string;
@@ -41,6 +46,9 @@ interface ProjectSpec {
 export default function ArchitectPage() {
   const router = useRouter();
   const setProjectSpec = useAppStore((state) => state.setProjectSpec);
+  const setBlueprint = useAppStore((state) => state.setBlueprint);
+  const setProjectSummary = useAppStore((state) => state.setProjectSummary);
+  const setTechStack = useAppStore((state) => state.setTechStack);
 
   const [appState, setAppState] = useState<AppState>("initial");
   const [projectIdea, setProjectIdea] = useState("");
@@ -52,6 +60,9 @@ export default function ArchitectPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [finalSpec, setFinalSpec] = useState<ProjectSpec | null>(null);
+  // Store tech stack from agents backend
+  const [agentTechStack, setAgentTechStack] = useState<string[]>([]);
+  const [agentSummary, setAgentSummary] = useState("");
 
   const handleStartProject = async () => {
     if (!projectIdea.trim()) {
@@ -63,25 +74,21 @@ export default function ArchitectPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/architect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "process-idea",
-          idea: projectIdea,
-        }),
-      });
+      // Call the new Python agents backend
+      const data = await analyseIdea(projectIdea);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to process idea");
-      }
+      const features: Feature[] = (data.features || []).map((f: AgentFeature) => ({
+        id: f.id,
+        name: f.name,
+        description: f.description,
+      }));
 
-      const data = await response.json();
-      setAllFeatures(data.features || []);
+      setAllFeatures(features);
+      setAgentTechStack(data.tech_stack || []);
+      setAgentSummary(data.project_summary || "");
 
-      if (data.features && data.features.length > 0) {
-        const allIds = new Set<string>(data.features.map((f: Feature) => f.id));
+      if (features.length > 0) {
+        const allIds = new Set<string>(features.map((f) => f.id));
         setSelectedFeatureIds(allIds);
       }
 
@@ -153,25 +160,34 @@ export default function ArchitectPage() {
     try {
       const selectedFeatures = allFeatures.filter((f) => selectedFeatureIds.has(f.id));
 
-      const response = await fetch("/api/architect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "finalize",
-          projectName,
-          selectedFeatures,
-          originalIdea: projectIdea,
-        }),
+      // Call agents backend for blueprint generation
+      const { blueprint } = await generateBlueprint({
+        project_summary: agentSummary || projectIdea,
+        selected_features: selectedFeatures.map((f) => ({
+          id: f.id,
+          name: f.name,
+          description: f.description,
+        })),
+        tech_stack: agentTechStack,
+        user_level: "intermediate", // will be refined in skill-level page
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to finalize project");
-      }
+      // Store in Zustand
+      setBlueprint(blueprint);
+      setProjectSummary(agentSummary);
+      setTechStack(agentTechStack);
 
-      const data = await response.json();
-      setFinalSpec(data.spec);
-      console.log("[Architect] Final Specification:", data.spec);
+      // Also keep old finalSpec for backward compat display
+      setFinalSpec({
+        projectName: blueprint.name || projectName,
+        description: blueprint.description || agentSummary,
+        features: selectedFeatures,
+        levels: [],
+        designerInput: { nodes: [] },
+        projectMarkdown: "",
+      });
+
+      console.log("[Architect] Blueprint:", blueprint);
       setAppState("finalized");
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -181,13 +197,11 @@ export default function ArchitectPage() {
     }
   };
 
-  const handleProceedToRoadmap = () => {
+  const handleProceedToSkillLevel = () => {
     if (!finalSpec) return;
-
-    // Store spec in Zustand store
+    // Store spec for backward compat
     setProjectSpec(finalSpec);
-
-    router.push("/roadmap");
+    router.push("/skill-level");
   };
 
   const handleReset = () => {
@@ -618,8 +632,8 @@ export default function ArchitectPage() {
               <Button variant="outline" onClick={handleReset} disabled={isLoading}>
                 Start New Project
               </Button>
-              <Button onClick={handleProceedToRoadmap} disabled={isLoading} className="flex-1">
-                Proceed to Roadmap
+              <Button onClick={handleProceedToSkillLevel} disabled={isLoading} className="flex-1">
+                Choose Your Level
               </Button>
             </div>
           </div>

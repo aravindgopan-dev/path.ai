@@ -1,4 +1,5 @@
 import Navbar from "@/components/Navbar";
+import { FloatingChatbot } from "@/components/FloatingChatbot";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import {
@@ -48,6 +49,7 @@ export default function RootLayout({
               <main className="flex-1 w-full">
                 {children}
               </main>
+              <FloatingChatbot />
             </div>
           </ThemeProvider>
         </body>
