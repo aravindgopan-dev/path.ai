@@ -1,5 +1,18 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import type {
+    Blueprint,
+    Skill,
+    RoadmapNode,
+    RoadmapLevel,
+    FileTreeEntry,
+    Documentation,
+    AgentFeature,
+    Instruction,
+    Skeleton,
+    ValidationResult,
+    Feedback,
+} from '@/lib/agents-api';
 
 // Types
 export interface Feature {
@@ -51,6 +64,70 @@ interface AppState {
     projectSpec: ProjectSpec | null;
     setProjectSpec: (spec: ProjectSpec | null) => void;
 
+    // ── New agents-backed state ──────────────────────
+    blueprint: Blueprint | null;
+    setBlueprint: (bp: Blueprint | null) => void;
+
+    userLevel: string; // "beginner" | "intermediate" | "pro"
+    setUserLevel: (level: string) => void;
+
+    suggestedSkills: Skill[];
+    setSuggestedSkills: (skills: Skill[]) => void;
+
+    roadmapNodes: RoadmapNode[];
+    setRoadmapNodes: (nodes: RoadmapNode[]) => void;
+
+    // ── Level-based roadmap state ────────────────────
+    roadmapLevels: RoadmapLevel[];
+    setRoadmapLevels: (levels: RoadmapLevel[]) => void;
+
+    currentLevelId: string | null;
+    setCurrentLevelId: (id: string | null) => void;
+
+    completedNodes: string[];
+    markNodeCompleted: (nodeId: string) => void;
+
+    fileTree: FileTreeEntry[];
+    setFileTree: (tree: FileTreeEntry[]) => void;
+
+    codingMode: "signature" | "free";
+    setCodingMode: (mode: "signature" | "free") => void;
+
+    documentation: Documentation | null;
+    setDocumentation: (doc: Documentation | null) => void;
+
+    // Architect flow summary
+    projectSummary: string;
+    setProjectSummary: (s: string) => void;
+
+    techStack: string[];
+    setTechStack: (ts: string[]) => void;
+
+    // ── Coding / node state ──────────────────────────
+    projectId: string | null;
+    setProjectId: (id: string | null) => void;
+
+    activeNodeId: string | null;
+    setActiveNodeId: (id: string | null) => void;
+
+    instruction: Instruction | null;
+    setInstruction: (i: Instruction | null) => void;
+
+    skeletonFiles: Skeleton | null;
+    setSkeletonFiles: (s: Skeleton | null) => void;
+
+    validationResult: ValidationResult | null;
+    setValidationResult: (v: ValidationResult | null) => void;
+
+    feedback: Feedback | null;
+    setFeedback: (f: Feedback | null) => void;
+
+    chatHistory: Array<{ role: string; content: string }>;
+    setChatHistory: (h: Array<{ role: string; content: string }>) => void;
+    addChatMessage: (msg: { role: string; content: string }) => void;
+    clearChatHistory: () => void;
+    // ─────────────────────────────────────────────────
+
     // Current file being edited
     currentFile: FileData | null;
     setCurrentFile: (file: FileData | null) => void;
@@ -68,10 +145,6 @@ interface AppState {
 
     // Reset all state
     resetAll: () => void;
-
-    // Roadmap/Level Actions
-    completeLevel: (levelNumber: number) => void;
-    unlockLevel: (levelNumber: number) => void;
 
     // Hydration tracking
     _hasHydrated: boolean;
@@ -93,6 +166,75 @@ export const useAppStore = create<AppState>()(
             currentFile: defaultFile,
             openFiles: [defaultFile],
             fileHistory: [],
+
+            // ── New agents state defaults ──
+            blueprint: null,
+            userLevel: 'intermediate',
+            suggestedSkills: [],
+            roadmapNodes: [],
+            roadmapLevels: [],
+            currentLevelId: null,
+            completedNodes: [],
+            fileTree: [],
+            codingMode: 'signature' as const,
+            documentation: null,
+            projectSummary: '',
+            techStack: [],
+
+            // ── New agents setters ──
+            setBlueprint: (bp) => set({ blueprint: bp }),
+            setUserLevel: (level) => set({ userLevel: level }),
+            setSuggestedSkills: (skills) => set({ suggestedSkills: skills }),
+            setRoadmapNodes: (nodes) => set({ roadmapNodes: nodes }),
+            setRoadmapLevels: (levels) => set({ roadmapLevels: levels }),
+            setCurrentLevelId: (id) => set({ currentLevelId: id }),
+            markNodeCompleted: (nodeId) =>
+                set((state) => {
+                    if (!state.completedNodes.includes(nodeId)) {
+                        return { completedNodes: [...state.completedNodes, nodeId] };
+                    }
+                    return state;
+                }),
+            setFileTree: (tree) => set({ fileTree: tree }),
+            setCodingMode: (mode) => set({ codingMode: mode }),
+            setDocumentation: (doc) => set({ documentation: doc }),
+            setProjectSummary: (s) => set({ projectSummary: s }),
+            setTechStack: (ts) => set({ techStack: ts }),
+
+            // ── Coding state defaults + setters ──
+            projectId: null,
+            setProjectId: (id) => set({ projectId: id }),
+
+            activeNodeId: null,
+            setActiveNodeId: (id) => set({
+                activeNodeId: id,
+                // Reset per-node transient state when switching nodes
+                instruction: null,
+                skeletonFiles: null,
+                validationResult: null,
+                feedback: null,
+                chatHistory: [],
+                codingMode: 'signature' as const,
+                documentation: null,
+            }),
+
+            instruction: null,
+            setInstruction: (i) => set({ instruction: i }),
+
+            skeletonFiles: null,
+            setSkeletonFiles: (s) => set({ skeletonFiles: s }),
+
+            validationResult: null,
+            setValidationResult: (v) => set({ validationResult: v }),
+
+            feedback: null,
+            setFeedback: (f) => set({ feedback: f }),
+
+            chatHistory: [],
+            setChatHistory: (h) => set({ chatHistory: h }),
+            addChatMessage: (msg) =>
+                set((state) => ({ chatHistory: [...state.chatHistory, msg] })),
+            clearChatHistory: () => set({ chatHistory: [] }),
 
             // Actions
             setProjectSpec: (spec) => set({ projectSpec: spec }),
@@ -143,34 +285,25 @@ export const useAppStore = create<AppState>()(
                     currentFile: defaultFile,
                     openFiles: [defaultFile],
                     fileHistory: [],
-                }),
-
-            completeLevel: (levelNumber) =>
-                set((state) => {
-                    if (!state.projectSpec) return state;
-                    const newLevels = state.projectSpec.levels.map((l) =>
-                        l.level === levelNumber ? { ...l, completed: true } : l
-                    );
-                    return {
-                        projectSpec: {
-                            ...state.projectSpec,
-                            levels: newLevels,
-                        },
-                    };
-                }),
-
-            unlockLevel: (levelNumber) =>
-                set((state) => {
-                    if (!state.projectSpec) return state;
-                    const newLevels = state.projectSpec.levels.map((l) =>
-                        l.level === levelNumber ? { ...l, locked: false } : l
-                    );
-                    return {
-                        projectSpec: {
-                            ...state.projectSpec,
-                            levels: newLevels,
-                        },
-                    };
+                    blueprint: null,
+                    userLevel: 'intermediate',
+                    suggestedSkills: [],
+                    roadmapNodes: [],
+                    roadmapLevels: [],
+                    currentLevelId: null,
+                    completedNodes: [],
+                    fileTree: [],
+                    codingMode: 'signature' as const,
+                    documentation: null,
+                    projectSummary: '',
+                    techStack: [],
+                    projectId: null,
+                    activeNodeId: null,
+                    instruction: null,
+                    skeletonFiles: null,
+                    validationResult: null,
+                    feedback: null,
+                    chatHistory: [],
                 }),
 
             _hasHydrated: false,
@@ -185,6 +318,19 @@ export const useAppStore = create<AppState>()(
                 currentFile: state.currentFile,
                 openFiles: state.openFiles,
                 fileHistory: state.fileHistory,
+                blueprint: state.blueprint,
+                userLevel: state.userLevel,
+                suggestedSkills: state.suggestedSkills,
+                roadmapNodes: state.roadmapNodes,
+                roadmapLevels: state.roadmapLevels,
+                currentLevelId: state.currentLevelId,
+                completedNodes: state.completedNodes,
+                fileTree: state.fileTree,
+                codingMode: state.codingMode,
+                projectSummary: state.projectSummary,
+                techStack: state.techStack,
+                projectId: state.projectId,
+                activeNodeId: state.activeNodeId,
             }),
             onRehydrateStorage: (state) => {
                 return () => state.setHasHydrated(true);
