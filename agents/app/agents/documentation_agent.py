@@ -9,23 +9,18 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.utils.model_factory import get_medium_llm
 from app.utils.prompts import DOCUMENTATION_SYSTEM, DOCUMENTATION_USER
+from app.schemas import DocumentationSchema
 
 
 async def generate_documentation(
     blueprint: dict,
     node: dict,
     user_level: str,
+    context: str = "No additional context.",
 ) -> dict[str, Any]:
-    """Return structured documentation for a learn/setup node.
-
-    Output: {
-        explanation,
-        algorithm_steps: [],
-        common_mistakes: [],
-        implementation_strategy: []
-    }
-    """
+    """Return structured documentation for a node with context awareness."""
     llm = get_medium_llm(temperature=0.3)
+    structured_llm = llm.with_structured_output(DocumentationSchema)
 
     messages = [
         SystemMessage(content=DOCUMENTATION_SYSTEM),
@@ -34,26 +29,10 @@ async def generate_documentation(
                 blueprint_json=json.dumps(blueprint, indent=2),
                 node_json=json.dumps(node, indent=2),
                 level=user_level,
+                context=context,
             )
         ),
     ]
 
-    response = await llm.ainvoke(messages)
-    return _extract_json(response.content)
-
-
-def _extract_json(text: str) -> dict:
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1:
-        try:
-            return json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    raise ValueError(f"Could not parse JSON from LLM response:\n{text[:500]}")
+    content: DocumentationSchema = await structured_llm.ainvoke(messages)
+    return content.model_dump()

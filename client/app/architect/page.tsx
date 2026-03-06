@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Send, CheckCircle2, X, Map } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { useAppStore, type TreeNode, type Level } from "@/lib/store";
 import { DotPattern } from "@/components/ui/dot-pattern";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ interface ProjectSpec {
 
 export default function ArchitectPage() {
   const router = useRouter();
+  const { getToken } = useAuth();
   const setProjectSpec = useAppStore((state) => state.setProjectSpec);
   const setBlueprint = useAppStore((state) => state.setBlueprint);
   const setProjectSummary = useAppStore((state) => state.setProjectSummary);
@@ -74,8 +76,9 @@ export default function ArchitectPage() {
     setError(null);
 
     try {
+      const token = await getToken();
       // Call the new Python agents backend
-      const data = await analyseIdea(projectIdea);
+      const data = await analyseIdea(projectIdea, token ?? undefined);
 
       const features: Feature[] = (data.features || []).map((f: AgentFeature) => ({
         id: f.id,
@@ -159,6 +162,7 @@ export default function ArchitectPage() {
 
     try {
       const selectedFeatures = allFeatures.filter((f) => selectedFeatureIds.has(f.id));
+      const token = await getToken();
 
       // Call agents backend for blueprint generation
       const { blueprint } = await generateBlueprint({
@@ -170,7 +174,7 @@ export default function ArchitectPage() {
         })),
         tech_stack: agentTechStack,
         user_level: "intermediate", // will be refined in skill-level page
-      });
+      }, token ?? undefined);
 
       // Store in Zustand
       setBlueprint(blueprint);

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { MessageCircle, X, Send, Loader2, Minimize2 } from "lucide-react"
+import { useAuth } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -18,6 +19,7 @@ export function FloatingChatbot() {
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { getToken } = useAuth()
 
   const activeNodeId = useAppStore((s) => s.activeNodeId)
   const chatHistory = useAppStore((s) => s.chatHistory)
@@ -46,7 +48,8 @@ export function FloatingChatbot() {
     try {
       const userCode =
         openFiles?.map((f) => `--- ${f.name} ---\n${f.content}`).join("\n\n") ?? ""
-      const res = await chatNode(activeNodeId, userMsg.content, chatHistory, userCode)
+      const token = await getToken()
+      const res = await chatNode(activeNodeId, userMsg.content, chatHistory, userCode, token ?? undefined)
       addChatMessage({ role: "assistant", content: res.response })
     } catch {
       addChatMessage({

@@ -22,6 +22,7 @@ import {
   Lightbulb,
   ChevronRight,
 } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -170,6 +171,7 @@ export default function RoadmapPage() {
   const projectId = useAppStore((s) => s.projectId);
   const setActiveNodeId = useAppStore((s) => s.setActiveNodeId);
   const _hasHydrated = useAppStore((s) => s._hasHydrated);
+  const { getToken } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +189,8 @@ export default function RoadmapPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const { roadmap } = await getFlatRoadmap(projectId);
+        const token = await getToken();
+        const { roadmap } = await getFlatRoadmap(projectId, token ?? undefined);
         if (!cancelled) {
           setRoadmapNodes(roadmap);
         }
@@ -387,11 +390,11 @@ export default function RoadmapPage() {
                 </div>
 
                 {/* Files */}
-                {selectedNode.files && selectedNode.files.length > 0 && (
+                {((selectedNode.expected_spec?.expected_files && selectedNode.expected_spec.expected_files.length > 0) || (selectedNode.metadata?.files && selectedNode.metadata.files.length > 0)) && (
                   <div>
                     <h4 className="text-sm font-semibold mb-3">Files Involved</h4>
                     <div className="flex flex-wrap gap-2">
-                      {selectedNode.files.map((f) => (
+                      {(selectedNode.expected_spec?.expected_files ?? selectedNode.metadata?.files ?? []).map((f: string) => (
                         <Badge key={f} variant="secondary" className="font-mono text-[11px]">
                           <FileCode className="h-3 w-3 mr-1" />{f}
                         </Badge>
@@ -400,17 +403,29 @@ export default function RoadmapPage() {
                   </div>
                 )}
 
-                {/* Validation Criteria */}
-                {selectedNode.validationCriteria && selectedNode.validationCriteria.length > 0 && (
+                {/* Validation Criteria / Learning Focus */}
+                {((selectedNode.expected_spec?.validation_rules && selectedNode.expected_spec.validation_rules.length > 0) || 
+                  (selectedNode.documentation?.algorithm_steps && selectedNode.documentation.algorithm_steps.length > 0)) && (
                   <div>
-                    <h4 className="text-sm font-semibold mb-3">What You'll Learn</h4>
+                    <h4 className="text-sm font-semibold mb-3">
+                      {selectedNode.type === 'code' ? "Validation Criteria" : "Steps to Follow"}
+                    </h4>
                     <ul className="space-y-2">
-                      {selectedNode.validationCriteria.map((v, i) => (
-                        <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 mt-1.5 shrink-0" />
-                          {v}
-                        </li>
-                      ))}
+                      {selectedNode.type === 'code' ? (
+                        selectedNode.expected_spec?.validation_rules.map((v: any, i: number) => (
+                          <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 mt-1.5 shrink-0" />
+                            {typeof v === 'string' ? v : v.contains ? `Must contain: ${v.contains}` : JSON.stringify(v)}
+                          </li>
+                        ))
+                      ) : (
+                        selectedNode.documentation?.algorithm_steps.map((s: string, i: number) => (
+                          <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0" />
+                            {s}
+                          </li>
+                        ))
+                      )}
                     </ul>
                   </div>
                 )}

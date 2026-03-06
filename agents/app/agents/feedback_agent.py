@@ -9,6 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.utils.model_factory import get_small_llm
 from app.utils.prompts import FEEDBACK_SYSTEM, FEEDBACK_USER
+from app.schemas import FeedbackSchema
 
 
 async def generate_feedback(
@@ -17,8 +18,9 @@ async def generate_feedback(
     expected_spec: dict,
     node_objective: str,
 ) -> dict[str, Any]:
-    """Return { feedback_message, hints, improvement_points }."""
+    """Return structured feedback."""
     llm = get_small_llm(temperature=0.4)
+    structured_llm = llm.with_structured_output(FeedbackSchema)
 
     messages = [
         SystemMessage(content=FEEDBACK_SYSTEM),
@@ -32,27 +34,5 @@ async def generate_feedback(
         ),
     ]
 
-    response = await llm.ainvoke(messages)
-    return _extract_json(response.content)
-
-
-def _extract_json(text: str) -> dict:
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1:
-        try:
-            return json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    # Graceful fallback — return the raw text as the message
-    return {
-        "feedback_message": text.strip(),
-        "hints": [],
-        "improvement_points": [],
-    }
+    content: FeedbackSchema = await structured_llm.ainvoke(messages)
+    return content.model_dump()

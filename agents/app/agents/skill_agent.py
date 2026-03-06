@@ -1,24 +1,23 @@
-"""Skill Assessment Agent — identifies high-level conceptual skills."""
-
 from __future__ import annotations
 
 import json
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from app.state import ProjectState
 from app.utils.model_factory import get_medium_llm
 from app.utils.prompts import SKILL_SYSTEM, SKILL_USER
+from app.schemas import SkillSchema
 
+class SkillsResponse(BaseModel):
+    skills: list[SkillSchema] = Field(..., description="List of assessed skills")
 
 async def skill_node(state: ProjectState) -> dict[str, Any]:
-    """LangGraph node: assess required conceptual skills.
-
-    Reads  : state["blueprint"], state["user_level"]
-    Writes : state["suggested_skills"]
-    """
+    """LangGraph node: assess required conceptual skills."""
     llm = get_medium_llm(temperature=0.3)
+    structured_llm = llm.with_structured_output(SkillsResponse)
 
     blueprint = state.get("blueprint", {})
     level = state.get("user_level", "intermediate")
@@ -33,26 +32,6 @@ async def skill_node(state: ProjectState) -> dict[str, Any]:
         ),
     ]
 
-    response = await llm.ainvoke(messages)
-    parsed = _extract_json(response.content)
+    content: SkillsResponse = await structured_llm.ainvoke(messages)
 
-    return {"suggested_skills": parsed.get("skills", [])}
-
-
-# ── helper ────────────────────────────────────────
-
-def _extract_json(text: str) -> dict:
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1:
-        try:
-            return json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    raise ValueError(f"Could not parse JSON from LLM response:\n{text[:500]}")
+    return {"suggested_skills": [s.model_dump() for s in content.skills]}

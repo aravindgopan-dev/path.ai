@@ -19,6 +19,7 @@ class Project(Base):
     __tablename__ = "projects"
 
     id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False)
     blueprint_json = Column(Text, nullable=False, default="{}")
     file_tree_json = Column(Text, nullable=True)
@@ -58,6 +59,8 @@ class RoadmapNodeModel(Base):
     metadata_json = Column(Text, nullable=False, default="{}")
     expected_spec_json = Column(Text, nullable=True)
     documentation_json = Column(Text, nullable=True)
+    instruction_json = Column(Text, nullable=True)
+    skeleton_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
     project = relationship("Project", back_populates="nodes")
@@ -96,3 +99,19 @@ class RoadmapNodeModel(Base):
 
     def set_documentation(self, doc: dict) -> None:
         self.documentation_json = json.dumps(doc)
+
+    def get_instruction(self) -> dict | None:
+        if not self.instruction_json:
+            return None
+        return json.loads(self.instruction_json)
+
+    def set_instruction(self, instruction: dict) -> None:
+        self.instruction_json = json.dumps(instruction)
+
+    def get_skeleton(self) -> dict | None:
+        if not self.skeleton_json:
+            return None
+        return json.loads(self.skeleton_json)
+
+    def set_skeleton(self, skeleton: dict) -> None:
+        self.skeleton_json = json.dumps(skeleton)

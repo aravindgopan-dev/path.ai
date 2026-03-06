@@ -16,8 +16,9 @@ import {
   Check,
   X,
 } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { useAppStore } from "@/lib/store";
-import { assessSkills, type Skill } from "@/lib/agents-api";
+import { assessSkills, generateRoadmap, type Skill } from "@/lib/agents-api";
 import { cn } from "@/lib/utils";
 
 const LEVELS = [
@@ -53,9 +54,13 @@ const LEVELS = [
 export default function SkillLevelPage() {
   const router = useRouter();
 
+  const { getToken } = useAuth();
   const blueprint = useAppStore((s) => s.blueprint);
   const setUserLevel = useAppStore((s) => s.setUserLevel);
   const setSuggestedSkills = useAppStore((s) => s.setSuggestedSkills);
+  const setRoadmapNodes = useAppStore((s) => s.setRoadmapNodes);
+  const setProjectId = useAppStore((s) => s.setProjectId);
+  const setFileTree = useAppStore((s) => s.setFileTree);
 
   const [selected, setSelected] = useState<string | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -77,10 +82,11 @@ export default function SkillLevelPage() {
     setError(null);
 
     try {
+      const token = await getToken();
       const { skills: fetchedSkills } = await assessSkills({
         blueprint,
         user_level: selected,
-      });
+      }, token ?? undefined);
 
       setSkills(fetchedSkills);
       // Pre-select all
@@ -100,10 +106,31 @@ export default function SkillLevelPage() {
     setSelectedSkillIds(next);
   };
 
-  const handleProceedToRoadmap = () => {
+  const handleProceedToRoadmap = async () => {
+    if (!blueprint || !selected) return;
     const finalSkills = skills.filter((s) => selectedSkillIds.has(s.id));
     setSuggestedSkills(finalSkills);
-    router.push("/roadmap");
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      const res = await generateRoadmap({
+        blueprint,
+        user_level: selected,
+        suggested_skills: finalSkills,
+      }, token ?? undefined);
+
+      setRoadmapNodes(res.roadmap);
+      setProjectId(res.project_id);
+      setFileTree(res.file_tree);
+      
+      router.push("/roadmap");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate roadmap");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Guard — redirect if no blueprint
@@ -289,11 +316,20 @@ export default function SkillLevelPage() {
               </Button>
               <Button
                 className="flex-1 gap-2"
-                disabled={selectedSkillIds.size === 0}
+                disabled={selectedSkillIds.size === 0 || isLoading}
                 onClick={handleProceedToRoadmap}
               >
-                Generate Roadmap
-                <ArrowRight className="h-4 w-4" />
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generating Roadmap…
+                  </>
+                ) : (
+                  <>
+                    Generate Roadmap
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </Button>
             </div>
           </div>

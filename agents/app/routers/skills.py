@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from app.graph import skill_graph
+from app.auth import get_current_user
 
 router = APIRouter()
 
@@ -16,7 +17,7 @@ class SkillsRequest(BaseModel):
 
 
 @router.post("/skills")
-async def assess_skills(body: SkillsRequest):
+async def assess_skills(body: SkillsRequest, user_id: str = Depends(get_current_user)):
     """Return high-level conceptual skills required for the project."""
     if not body.blueprint:
         raise HTTPException(status_code=400, detail="blueprint must not be empty")
