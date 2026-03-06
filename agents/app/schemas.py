@@ -68,14 +68,21 @@ class RoadmapNodeSchema(BaseModel):
     id: str = Field(..., description="Unique ID for the node")
     title: str = Field(..., description="Human-readable title")
     description: str = Field(..., description="Detailed learning or task description")
-    type: str = Field(..., description="Type of node: 'setup', 'learn', or 'code'")
+    type: str = Field(..., description="Type of node: 'setup', 'learning', or 'coding'")
     level: int = Field(..., description="Topological level (0-indexed)")
     dependencies: List[str] = Field(default_factory=list, description="IDs of nodes this node depends on")
-    unlock_after: List[str] = Field(default_factory=list, description="IDs of nodes that must be completed before this one is available")
-    # For coding nodes
-    expected_spec: Optional[ExpectedSpecSchema] = Field(None, description="Detailed validation spec (for 'code' nodes)")
-    # For learn/setup nodes
-    documentation: Optional[DocumentationSchema] = Field(None, description="Detailed documentation (for 'learn'/'setup' nodes)")
+    
+    # For 'coding' nodes
+    algorithm: Optional[List[str]] = Field(None, description="Step-by-step logic for coding tasks")
+    validation_rules: Optional[List[ValidationRuleSchema]] = Field(None, description="Evaluation metrics/patterns")
+    files: Optional[List[str]] = Field(None, description="Files involved in this coding task")
+    blueprint_spec: Optional[ExpectedSpecSchema] = Field(None, description="Technical spec (optional if inferred from above)")
+
+    # For 'setup' nodes
+    setup_commands: Optional[List[str]] = Field(None, description="Linux/CLI commands for environment setup")
+
+    # For 'learning' nodes
+    learning_metadata: Optional[DocumentationSchema] = Field(None, description="Metadata for detailed documentation generation")
 
 
 class RoadmapSchema(BaseModel):

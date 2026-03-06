@@ -12,7 +12,7 @@ from app.state import ProjectState
 from app.agents.architect_agent import architect_node
 from app.agents.blueprint_builder import blueprint_node
 from app.agents.skill_agent import skill_node
-from app.agents.roadmap_agent import roadmap_planner_node, spec_enricher_node
+from app.agents.roadmap_agent import roadmap_planner_node
 
 
 # ──────────────────────────────────────────────
@@ -58,11 +58,9 @@ def build_skill_graph():
 def build_roadmap_graph():
     g = StateGraph(ProjectState)
     g.add_node("planner", roadmap_planner_node)
-    g.add_node("enricher", spec_enricher_node)
     
     g.set_entry_point("planner")
-    g.add_edge("planner", "enricher")
-    g.add_edge("enricher", END)
+    g.add_edge("planner", END)
     return g.compile()
 
 

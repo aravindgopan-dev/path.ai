@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.db.database import get_db
+from app.db.models import Project, RoadmapNodeModel
 
 from app.graph import roadmap_graph
 from app.agents.file_tree_agent import generate_file_tree
@@ -23,7 +24,7 @@ router = APIRouter()
 
 # ── Helper: flatten level-based structure to ordered node list ──
 
-_TYPE_MAP = {"code": "coding", "learn": "learning", "setup": "setup"}
+_TYPE_MAP = {"coding": "coding", "learning": "learning", "setup": "setup"}
 
 def flatten_levels_to_nodes(
     levels: list[dict],
@@ -138,12 +139,15 @@ async def generate_roadmap(body: RoadmapRequest, db: Session = Depends(get_db), 
     db.flush()
 
     for node_data in nodes:
-        node_id = node_data.get("id") or str(uuid.uuid4())
+        raw_node_id = node_data.get("id") or str(uuid.uuid4())
+        # Prefix node ID with project_id to ensure global uniqueness
+        node_id = f"{project_id}:{raw_node_id}"
+        
         db_node = RoadmapNodeModel(
             id=node_id,
             project_id=project_id,
             title=node_data.get("title", ""),
-            type=node_data.get("type", "code"),
+            type=node_data.get("type", "coding"),
             description=node_data.get("description", ""),
             level_id=f"level-{node_data.get('level', 0)}",
             level_order=node_data.get("level", 0),
@@ -153,11 +157,27 @@ async def generate_roadmap(body: RoadmapRequest, db: Session = Depends(get_db), 
         db_node.set_unlock_after(node_data.get("unlock_after", []))
         db_node.set_metadata(node_data.get("metadata", {}))
         
-        # Extract integrated spec/docs
-        if node_data.get("expected_spec"):
-            db_node.set_expected_spec(node_data["expected_spec"])
-        if node_data.get("documentation"):
-            db_node.set_documentation(node_data["documentation"])
+        # Map specialized fields to existing DB columns
+        if node_data.get("type") == "coding":
+            # Store algorithm in instruction_json
+            if node_data.get("algorithm"):
+                db_node.set_instruction({"algorithm": node_data["algorithm"]})
+            # Store validation rules and files in expected_spec_json
+            spec = {
+                "validation_rules": node_data.get("validation_rules", []),
+                "expected_files": node_data.get("files", [])
+            }
+            db_node.set_expected_spec(spec)
+        
+        elif node_data.get("type") == "learning":
+            # Store learning_metadata in documentation_json
+            if node_data.get("learning_metadata"):
+                db_node.set_documentation(node_data["learning_metadata"])
+        
+        elif node_data.get("type") == "setup":
+            # Store setup_commands in instruction_json
+            if node_data.get("setup_commands"):
+                db_node.set_instruction({"setup_commands": node_data["setup_commands"]})
             
         db.add(db_node)
 

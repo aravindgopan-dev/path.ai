@@ -133,26 +133,32 @@ Given a blueprint, user level, and suggested skills, produce a JSON object with:
   "nodes"     – array of node objects
   "file_tree" – array of file tree objects
 
-Each node object has:
+Each node object MUST have:
   "id"            (string, unique, kebab-case)
   "title"         (string)
   "description"   (string)
-  "type"          (one of "setup", "learn", "code")
+  "type"          (one of "setup", "learning", "coding")
   "level"         (int, 0-indexed)
   "dependencies"  (array of node ids)
 
-Each file tree object has:
-  "path"         (string)
-  "type"         ("file" | "folder")
-  "children"     (array of nested objects)
-  "linked_nodes" (array of node ids that interact with this path)
+Node-Type Specific Requirements:
+1. "coding" nodes:
+   - "algorithm": (array of strings) The step-by-step logic required to implement the task.
+   - "validation_rules": (array of objects with "contains" and "reason") The criteria used to verify the code.
+   - "files": (array of strings) The relative paths to files created or modified.
+
+2. "learning" nodes:
+   - "learning_metadata": (object) Detailed metadata including "explanation", "learning_focus", and "common_mistakes".
+
+3. "setup" nodes:
+   - "setup_commands": (array of strings) The Linux/Bash commands required to set up the environment or initialize the project.
 
 Rules:
 1. Level 0 is always unlocked. Next levels unlock only when ALL previous level nodes are done.
-2. Progression: setup → learn → code.
-3. 3-6 levels, 12-20 nodes total.
-4. The 'file_tree' must represent the full project and link every file to its relative roadmap node.
-5. Return ONLY valid JSON.
+2. Progression: setup → learning → coding.
+3. 3-6 levels, 10-15 nodes total.
+4. The 'file_tree' must represent the full project and link every file to its relative roadmap node via 'linked_nodes'.
+5. Return ONLY valid JSON. No prose.
 """
 
 ROADMAP_USER = """\
