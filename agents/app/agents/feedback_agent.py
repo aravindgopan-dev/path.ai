@@ -7,7 +7,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.utils.model_factory import get_small_llm
+from app.utils.model_factory import get_medium_llm
 from app.utils.prompts import FEEDBACK_SYSTEM, FEEDBACK_USER
 from app.schemas import FeedbackSchema
 
@@ -19,7 +19,7 @@ async def generate_feedback(
     node_objective: str,
 ) -> dict[str, Any]:
     """Return structured feedback."""
-    llm = get_small_llm(temperature=0.4)
+    llm = get_medium_llm(temperature=0.4)
     structured_llm = llm.with_structured_output(FeedbackSchema)
 
     messages = [

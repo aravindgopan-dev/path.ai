@@ -8,14 +8,14 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.state import ProjectState
-from app.utils.model_factory import get_large_llm
+from app.utils.model_factory import get_medium_llm
 from app.utils.prompts import BLUEPRINT_SYSTEM, BLUEPRINT_USER
 from app.schemas import BlueprintSchema
 
 
 async def blueprint_node(state: ProjectState) -> dict[str, Any]:
     """LangGraph node: generate project blueprint."""
-    llm = get_large_llm(temperature=0.2)
+    llm = get_medium_llm(temperature=0.2)
     structured_llm = llm.with_structured_output(BlueprintSchema)
 
     features = state.get("selected_features", [])

@@ -7,7 +7,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.utils.model_factory import get_small_llm
+from app.utils.model_factory import get_medium_llm
 from app.utils.prompts import CHAT_SYSTEM, CHAT_USER
 from app.schemas import ChatResponseSchema
 
@@ -20,7 +20,7 @@ async def chat_with_node(
     message: str,
 ) -> dict[str, Any]:
     """Return { response: str } scoped to the current node only."""
-    llm = get_small_llm(temperature=0.5)
+    llm = get_medium_llm(temperature=0.5)
     structured_llm = llm.with_structured_output(ChatResponseSchema)
 
     history_text = "\n".join(
