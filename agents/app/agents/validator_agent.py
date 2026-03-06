@@ -88,14 +88,22 @@ def validate_code(
         else:
             missing.append(f"route:{route}")
 
-    # 5. Custom validation rules (simple string-contains checks)
+    # 5. Custom validation rules (pattern-match rules with reasons)
     for rule in expected_spec.get("validation_rules", []):
         total_checks += 1
-        keyword = rule.get("contains") or rule if isinstance(rule, str) else rule.get("contains", "")
+        
+        # Handle both old string format and new dict format
+        if isinstance(rule, str):
+            keyword = rule
+            reason = "Pedagogical requirement"
+        else:
+            keyword = rule.get("contains", "")
+            reason = rule.get("reason", "Important for your learning path")
+
         if keyword and keyword in all_content:
             passed_checks += 1
         elif keyword:
-            notes.append(f"Rule not met: expected '{keyword}' in code")
+            notes.append(f"Learning Note: '{keyword}' was missing. Hint: {reason}")
 
     status = "pass" if not missing and not notes else "fail"
     score = round((passed_checks / total_checks * 100) if total_checks > 0 else 0, 1)

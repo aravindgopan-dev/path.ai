@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import RoadmapNodeModel, Project
-from app.agents.instruction_agent import generate_instruction
 from app.agents.skeleton_agent import generate_skeleton
 from app.agents.expected_spec_agent import generate_expected_spec
 from app.agents.validator_agent import validate_code
 from app.agents.feedback_agent import generate_feedback
 from app.agents.chat_agent import chat_with_node
 from app.agents.documentation_agent import generate_documentation
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/node")
 
@@ -46,10 +46,13 @@ class RegenerateSpecRequest(BaseModel):
 
 # ── Helpers ────────────────────────────────────────
 
-def _get_node_or_404(node_id: str, db: Session) -> RoadmapNodeModel:
-    node = db.query(RoadmapNodeModel).filter(RoadmapNodeModel.id == node_id).first()
+def _get_node_or_404(node_id: str, db: Session, user_id: str) -> RoadmapNodeModel:
+    node = db.query(RoadmapNodeModel).join(Project).filter(
+        RoadmapNodeModel.id == node_id,
+        Project.user_id == user_id
+    ).first()
     if not node:
-        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found or unauthorized")
     return node
 
 
@@ -75,51 +78,74 @@ def _node_as_dict(node: RoadmapNodeModel) -> dict:
 # ── Endpoints ──────────────────────────────────────
 
 @router.post("/{node_id}/instruction")
-async def get_instruction(node_id: str, body: InstructionRequest, db: Session = Depends(get_db)):
+async def get_instruction(node_id: str, body: InstructionRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Generate structured coding instruction for a node."""
-    node = _get_node_or_404(node_id, db)
+    node = _get_node_or_404(node_id, db, user_id)
     project = _get_project_for_node(node, db)
     blueprint = project.get_blueprint()
 
-    result = await generate_instruction(
+    # 1. Check cache
+    cached = node.get_instruction()
+    if cached:
+        return {"instruction": cached}
+
+    # 2. Generate on-demand
+    result = await generate_documentation(
         blueprint=blueprint,
         node=_node_as_dict(node),
         user_level=body.user_level,
     )
+
+    # 3. Cache it
+    node.set_instruction(result)
+    db.commit()
+
     return {"instruction": result}
 
 
 @router.post("/{node_id}/skeleton")
-async def get_skeleton(node_id: str, body: SkeletonRequest, db: Session = Depends(get_db)):
+async def get_skeleton(node_id: str, body: SkeletonRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Generate skeleton scaffold for a coding node.
 
     Supports two modes via body.mode:
       - "signature" : 50% code scaffold with TODO markers
       - "free"      : minimal file creation only
     """
-    node = _get_node_or_404(node_id, db)
+    node = _get_node_or_404(node_id, db, user_id)
     project = _get_project_for_node(node, db)
     blueprint = project.get_blueprint()
 
     mode = body.mode if body.mode in ("signature", "free") else "signature"
 
+    # 1. Check cache (note: currently caches by node, independent of level/mode for simplicity)
+    # Improvement: could cache keying by (node_id, user_level, mode)
+    cached = node.get_skeleton()
+    if cached:
+        return {"skeleton": cached}
+
+    # 2. Generate on-demand
     result = await generate_skeleton(
         blueprint=blueprint,
         node=_node_as_dict(node),
         user_level=body.user_level,
         mode=mode,
     )
+
+    # 3. Cache it
+    node.set_skeleton(result)
+    db.commit()
+
     return {"skeleton": result}
 
 
 @router.post("/{node_id}/validate")
-async def validate_node(node_id: str, body: ValidateRequest, db: Session = Depends(get_db)):
+async def validate_node(node_id: str, body: ValidateRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Validate user code against the expected spec, then generate feedback.
 
     For code nodes: marks node completed only if status = pass.
     Returns validation score percentage.
     """
-    node = _get_node_or_404(node_id, db)
+    node = _get_node_or_404(node_id, db, user_id)
 
     expected_spec = node.get_expected_spec()
     if not expected_spec:
@@ -161,9 +187,9 @@ async def validate_node(node_id: str, body: ValidateRequest, db: Session = Depen
 
 
 @router.get("/{node_id}/documentation")
-def get_documentation(node_id: str, db: Session = Depends(get_db)):
+def get_documentation(node_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Return pre-generated documentation for a learn/setup node."""
-    node = _get_node_or_404(node_id, db)
+    node = _get_node_or_404(node_id, db, user_id)
     doc = node.get_documentation()
     if not doc:
         return {"documentation": None}
@@ -171,9 +197,9 @@ def get_documentation(node_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{node_id}/documentation")
-async def regenerate_documentation(node_id: str, db: Session = Depends(get_db)):
+async def regenerate_documentation(node_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """(Re)generate documentation for a learn/setup node."""
-    node = _get_node_or_404(node_id, db)
+    node = _get_node_or_404(node_id, db, user_id)
     project = _get_project_for_node(node, db)
     blueprint = project.get_blueprint()
 
@@ -190,9 +216,9 @@ async def regenerate_documentation(node_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{node_id}/chat")
-async def chat(node_id: str, body: ChatRequest, db: Session = Depends(get_db)):
+async def chat(node_id: str, body: ChatRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Node-scoped conversational assistant."""
-    node = _get_node_or_404(node_id, db)
+    node = _get_node_or_404(node_id, db, user_id)
     project = _get_project_for_node(node, db)
 
     blueprint = project.get_blueprint()
@@ -211,7 +237,7 @@ async def chat(node_id: str, body: ChatRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/{node_id}/regenerate-spec")
-async def regenerate_spec(node_id: str, body: RegenerateSpecRequest, db: Session = Depends(get_db)):
+async def regenerate_spec(node_id: str, body: RegenerateSpecRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """(Re)generate the expected spec for a coding node and persist it."""
     node = _get_node_or_404(node_id, db)
     project = _get_project_for_node(node, db)

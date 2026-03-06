@@ -9,13 +9,12 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from app.db.database import get_db
 
 from app.graph import roadmap_graph
-from app.db.database import get_db
-from app.db.models import Project, RoadmapNodeModel
-from app.agents.expected_spec_agent import generate_expected_spec
 from app.agents.file_tree_agent import generate_file_tree
 from app.agents.documentation_agent import generate_documentation
+from app.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -99,13 +98,14 @@ class RoadmapRequest(BaseModel):
 
 
 @router.post("/roadmap")
-async def generate_roadmap(body: RoadmapRequest, db: Session = Depends(get_db)):
-    """Generate level-based roadmap, persist to DB, and return."""
+async def generate_roadmap(body: RoadmapRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
+    """Generate consolidated roadmap, persist to DB, and return."""
     if not body.blueprint:
         raise HTTPException(status_code=400, detail="blueprint must not be empty")
     if body.user_level not in ("beginner", "intermediate", "pro"):
         raise HTTPException(status_code=400, detail="user_level must be beginner, intermediate, or pro")
 
+    # This single call now generates EVERYTHING: nodes, specs, documentation, and the file tree.
     result = await roadmap_graph.ainvoke(
         {
             "blueprint": body.blueprint,
@@ -114,107 +114,79 @@ async def generate_roadmap(body: RoadmapRequest, db: Session = Depends(get_db)):
         }
     )
 
-    levels: list[dict] = result.get("roadmap", [])
+    nodes: list[dict] = result.get("roadmap", [])
+    file_tree: list[dict] = result.get("file_tree", [])
 
-    # ── Persist project + nodes ───────────────────
+    # ── Persist project ───────────────────────────
     project_id = body.blueprint.get("project_id") or str(uuid.uuid4())
     project_name = body.blueprint.get("name", "Untitled")
 
-    # Upsert project
     project = db.query(Project).filter(Project.id == project_id).first()
-    if project:
-        project.set_blueprint(body.blueprint)
-    else:
-        project = Project(id=project_id, name=project_name)
-        project.set_blueprint(body.blueprint)
+    if not project:
+        project = Project(id=project_id, user_id=user_id, name=project_name)
         db.add(project)
+    elif project.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this project")
+    
+    project.set_blueprint(body.blueprint)
+    project.set_file_tree(file_tree)
     db.flush()
 
-    # Remove old nodes for this project (re-generation scenario)
+    # ── Persist nodes ─────────────────────────────
+    # Clear old nodes (re-generation scenario)
     db.query(RoadmapNodeModel).filter(RoadmapNodeModel.project_id == project_id).delete()
     db.flush()
 
-    coding_nodes: list[tuple[RoadmapNodeModel, dict]] = []
-    learn_setup_nodes: list[tuple[RoadmapNodeModel, dict]] = []
-
-    for level_idx, level_data in enumerate(levels):
-        level_id = level_data.get("level_id", f"level-{level_idx + 1}")
-        for node_data in level_data.get("nodes", []):
-            node_id = node_data.get("id", str(uuid.uuid4()))
-            db_node = RoadmapNodeModel(
-                id=node_id,
-                project_id=project_id,
-                title=node_data.get("title", ""),
-                type=node_data.get("type", "code"),
-                description=node_data.get("description", ""),
-                level_id=level_id,
-                level_order=level_idx,
-                completed=False,
-            )
-            db_node.set_dependencies(node_data.get("dependencies", []))
-            db_node.set_unlock_after(node_data.get("unlock_after", []))
-            db_node.set_metadata(node_data.get("metadata", {}))
-            db.add(db_node)
-
-            if db_node.type == "code":
-                coding_nodes.append((db_node, node_data))
-            elif db_node.type in ("learn", "setup"):
-                learn_setup_nodes.append((db_node, node_data))
+    for node_data in nodes:
+        node_id = node_data.get("id") or str(uuid.uuid4())
+        db_node = RoadmapNodeModel(
+            id=node_id,
+            project_id=project_id,
+            title=node_data.get("title", ""),
+            type=node_data.get("type", "code"),
+            description=node_data.get("description", ""),
+            level_id=f"level-{node_data.get('level', 0)}",
+            level_order=node_data.get("level", 0),
+            completed=False,
+        )
+        db_node.set_dependencies(node_data.get("dependencies", []))
+        db_node.set_unlock_after(node_data.get("unlock_after", []))
+        db_node.set_metadata(node_data.get("metadata", {}))
+        
+        # Extract integrated spec/docs
+        if node_data.get("expected_spec"):
+            db_node.set_expected_spec(node_data["expected_spec"])
+        if node_data.get("documentation"):
+            db_node.set_documentation(node_data["documentation"])
+            
+        db.add(db_node)
 
     db.commit()
 
-    # ── Generate expected_spec for coding nodes (background, best-effort) ──
-    async def _gen_spec(db_node: RoadmapNodeModel, node_data: dict) -> None:
-        try:
-            spec = await generate_expected_spec(
-                blueprint=body.blueprint,
-                node=node_data,
-                user_level=body.user_level,
-            )
-            db_node.set_expected_spec(spec)
-            db.commit()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to generate expected_spec for node %s: %s", db_node.id, exc)
+    # Structure into levels for the flattening helper
+    # Group nodes by level to maintain interface compatibility
+    levels_map: dict[int, list] = {}
+    for n in nodes:
+        lv = n.get("level", 0)
+        if lv not in levels_map:
+            levels_map[lv] = []
+        levels_map[lv].append(n)
+    
+    levels_list = []
+    for lv in sorted(levels_map.keys()):
+        levels_list.append({
+            "level_id": f"level-{lv}",
+            "unlocked": lv == 0,
+            "nodes": levels_map[lv]
+        })
 
-    # ── Generate documentation for learn/setup nodes (background, best-effort) ──
-    async def _gen_docs(db_node: RoadmapNodeModel, node_data: dict) -> None:
-        try:
-            doc = await generate_documentation(
-                blueprint=body.blueprint,
-                node=node_data,
-                user_level=body.user_level,
-            )
-            db_node.set_documentation(doc)
-            db.commit()
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to generate documentation for node %s: %s", db_node.id, exc)
-
-    tasks: list = []
-    if coding_nodes:
-        tasks += [_gen_spec(n, d) for n, d in coding_nodes]
-    if learn_setup_nodes:
-        tasks += [_gen_docs(n, d) for n, d in learn_setup_nodes]
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-    # ── Generate file tree (background, best-effort) ──
-    try:
-        file_tree = await generate_file_tree(
-            blueprint=body.blueprint,
-            levels=levels,
-        )
-        project.set_file_tree(file_tree)
-        db.commit()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to generate file tree for project %s: %s", project_id, exc)
-
-    return {"roadmap": flatten_levels_to_nodes(levels), "project_id": project_id}
+    return {"roadmap": flatten_levels_to_nodes(levels_list), "project_id": project_id}
 
 
 @router.get("/project/{project_id}/roadmap-levels")
-def get_roadmap_levels(project_id: str, db: Session = Depends(get_db)):
+def get_roadmap_levels(project_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Return the level-based roadmap with completion status from DB."""
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == user_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -261,10 +233,10 @@ def get_roadmap_levels(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/project/{project_id}/roadmap")
-def get_flat_roadmap(project_id: str, db: Session = Depends(get_db)):
+def get_flat_roadmap(project_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Return a flat ordered roadmap with completion status, lock state, and spec data."""
     # Re-use the level endpoint logic, then flatten
-    result = get_roadmap_levels(project_id, db)
+    result = get_roadmap_levels(project_id, db, user_id)
 
     # Build a lookup of DB node models for enrichment
     nodes = db.query(RoadmapNodeModel).filter(
@@ -279,9 +251,9 @@ def get_flat_roadmap(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/project/{project_id}/file-tree")
-def get_file_tree(project_id: str, db: Session = Depends(get_db)):
+def get_file_tree(project_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Return the file tree with completion status."""
-    project = db.query(Project).filter(Project.id == project_id).first()
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == user_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -313,9 +285,12 @@ def get_file_tree(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/node/{node_id}/complete")
-def complete_node(node_id: str, db: Session = Depends(get_db)):
+def complete_node(node_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Mark a node as completed. Unlock next level if all peers are done."""
-    node = db.query(RoadmapNodeModel).filter(RoadmapNodeModel.id == node_id).first()
+    node = db.query(RoadmapNodeModel).join(Project).filter(
+        RoadmapNodeModel.id == node_id,
+        Project.user_id == user_id
+    ).first()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
 

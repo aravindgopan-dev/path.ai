@@ -8,7 +8,6 @@ import type {
     FileTreeEntry,
     Documentation,
     AgentFeature,
-    Instruction,
     Skeleton,
     ValidationResult,
     Feedback,
@@ -110,8 +109,9 @@ interface AppState {
     activeNodeId: string | null;
     setActiveNodeId: (id: string | null) => void;
 
-    instruction: Instruction | null;
-    setInstruction: (i: Instruction | null) => void;
+    // Use Documentation for instructions as well
+    instruction: Documentation | null;
+    setInstruction: (i: Documentation | null) => void;
 
     skeletonFiles: Skeleton | null;
     setSkeletonFiles: (s: Skeleton | null) => void;
@@ -219,7 +219,7 @@ export const useAppStore = create<AppState>()(
             }),
 
             instruction: null,
-            setInstruction: (i) => set({ instruction: i }),
+            setInstruction: (i: Documentation | null) => set({ instruction: i }),
 
             skeletonFiles: null,
             setSkeletonFiles: (s) => set({ skeletonFiles: s }),

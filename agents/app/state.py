@@ -25,4 +25,5 @@ class ProjectState(TypedDict, total=False):
     suggested_skills: list           # list[{id, name, description}]
 
     # Roadmap output — level-based progressive structure
-    roadmap: list                    # list[Level dict] with nested nodes
+    roadmap: list                    # list[Node dict]
+    file_tree: list                  # list[FileTreeEntry dict]

@@ -51,12 +51,15 @@ export interface RoadmapNode {
   title: string;
   type: "setup" | "learn" | "code";
   description: string;
+  level: number;
   dependencies?: string[];
-  order_index: number;
+  unlock_after?: string[];
   completed: boolean;
   locked: boolean;
-  files: string[];
-  validationCriteria: string[];
+  // Integrated data
+  expected_spec?: ExpectedSpec;
+  documentation?: Documentation;
+  metadata?: Record<string, any>;
 }
 
 export interface RoadmapLevel {
@@ -78,7 +81,10 @@ export interface FileTreeEntry {
 
 export interface Documentation {
   explanation: string;
+  objective: string;
   algorithm_steps: string[];
+  constraints: string[];
+  learning_focus: string[];
   common_mistakes: string[];
   implementation_strategy: string[];
 }
@@ -91,13 +97,6 @@ export interface CompleteNodeResult {
 }
 
 // ── Coding types ─────────────────────────────────
-
-export interface Instruction {
-  objective: string;
-  constraints: string[];
-  learning_focus: string[];
-  files_involved: string[];
-}
 
 export interface SkeletonFile {
   filename: string;
@@ -140,10 +139,15 @@ export interface ExpectedSpec {
 
 // ── API calls ────────────────────────────────────
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function post<T>(path: string, body: unknown, token?: string): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${AGENTS_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
 
@@ -155,71 +159,67 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** Step 1 — Analyse a raw project idea. */
-export async function analyseIdea(idea: string): Promise<ArchitectResult> {
-  return post<ArchitectResult>("/architect", { idea });
+export async function analyseIdea(idea: string, token?: string): Promise<ArchitectResult> {
+  return post<ArchitectResult>("/architect", { idea }, token);
 }
 
-/** Step 2 — Generate full project blueprint. */
-export async function generateBlueprint(params: {
-  project_summary: string;
-  selected_features: AgentFeature[];
-  tech_stack: string[];
-  user_level: string;
-}): Promise<{ blueprint: Blueprint }> {
-  return post<{ blueprint: Blueprint }>("/blueprint", params);
+export async function generateBlueprint(
+  params: {
+    project_summary: string;
+    selected_features: AgentFeature[];
+    tech_stack: string[];
+    user_level: string;
+  },
+  token?: string,
+): Promise<{ blueprint: Blueprint }> {
+  return post<{ blueprint: Blueprint }>("/blueprint", params, token);
 }
 
-/** Step 3 — Assess conceptual skills. */
-export async function assessSkills(params: {
-  blueprint: Blueprint;
-  user_level: string;
-}): Promise<{ skills: Skill[] }> {
-  return post<{ skills: Skill[] }>("/skills", params);
+
+export async function assessSkills(
+  params: {
+    blueprint: Blueprint;
+    user_level: string;
+  },
+  token?: string,
+): Promise<{ skills: Skill[] }> {
+  return post<{ skills: Skill[] }>("/skills", params, token);
 }
 
-/** Step 4 — Generate learning roadmap (flat ordered). */
-export async function generateRoadmap(params: {
-  blueprint: Blueprint;
-  user_level: string;
-  suggested_skills: Skill[];
-}): Promise<{ roadmap: RoadmapNode[]; project_id: string }> {
-  return post<{ roadmap: RoadmapNode[]; project_id: string }>("/roadmap", params);
+export async function generateRoadmap(
+  params: {
+    blueprint: Blueprint;
+    user_level: string;
+    suggested_skills: Skill[];
+  },
+  token?: string,
+): Promise<{ roadmap: RoadmapNode[]; project_id: string; file_tree: FileTreeEntry[] }> {
+  return post<{ roadmap: RoadmapNode[]; project_id: string; file_tree: FileTreeEntry[] }>(
+    "/roadmap",
+    params,
+    token
+  );
 }
 
-/** Fetch flat roadmap with completion status. */
 export async function getFlatRoadmap(
   projectId: string,
+  token?: string,
 ): Promise<{ roadmap: RoadmapNode[]; project_id: string }> {
   const { levels, project_id } = await get<{
     levels: RoadmapLevel[];
     project_id: string;
-  }>(`/project/${projectId}/roadmap-levels`);
+  }>(`/project/${projectId}/roadmap-levels`, token);
 
   // Flatten levels → flat RoadmapNode[]
-  let orderIndex = 0;
   const roadmap: RoadmapNode[] = [];
 
-  const sorted = [...levels].sort((a, b) => a.order - b.order);
-  for (const level of sorted) {
+  const sortedLevels = [...levels].sort((a, b) => (a as any).order - (b as any).order);
+  for (const level of sortedLevels) {
     const levelLocked = !level.unlocked;
     for (const node of level.nodes) {
-      const meta = (node as any).metadata ?? {};
       roadmap.push({
-        id: node.id,
-        title: node.title,
-        type: node.type,
-        description: node.description,
-        dependencies: node.dependencies ?? (node as any).dependencies ?? [],
-        order_index: orderIndex++,
-        completed: node.completed,
+        ...node,
         locked: levelLocked && !node.completed,
-        files: meta.files ?? (node as any).files ?? [],
-        validationCriteria:
-          meta.validationCriteria ??
-          meta.validation_criteria ??
-          (node as any).validationCriteria ??
-          [],
       });
     }
   }
@@ -229,66 +229,80 @@ export async function getFlatRoadmap(
 
 // ── Coding endpoints ─────────────────────────────
 
-/** Get structured instruction for a coding node. */
 export async function getInstruction(
   nodeId: string,
   userLevel = "intermediate",
-): Promise<{ instruction: Instruction }> {
-  return post<{ instruction: Instruction }>(`/node/${nodeId}/instruction`, {
-    user_level: userLevel,
-  });
+  token?: string,
+): Promise<{ instruction: Documentation }> {
+  return post<{ instruction: Documentation }>(
+    `/node/${nodeId}/instruction`,
+    { user_level: userLevel },
+    token,
+  );
 }
 
-/** Get skeleton scaffold files for a coding node. */
 export async function getSkeleton(
   nodeId: string,
   userLevel = "intermediate",
   mode: "signature" | "free" = "signature",
+  token?: string,
 ): Promise<{ skeleton: Skeleton }> {
-  return post<{ skeleton: Skeleton }>(`/node/${nodeId}/skeleton`, {
-    user_level: userLevel,
-    mode,
-  });
+  return post<{ skeleton: Skeleton }>(
+    `/node/${nodeId}/skeleton`,
+    { user_level: userLevel, mode },
+    token,
+  );
 }
 
-/** Validate user code and get feedback. */
 export async function validateNode(
   nodeId: string,
   files: Array<{ filename: string; content: string }>,
+  token?: string,
 ): Promise<ValidateResponse> {
-  return post<ValidateResponse>(`/node/${nodeId}/validate`, { files });
+  return post<ValidateResponse>(`/node/${nodeId}/validate`, { files }, token);
 }
 
-/** Chat about a specific node. */
 export async function chatNode(
   nodeId: string,
   message: string,
   history: Array<{ role: string; content: string }> = [],
   userCode = "",
+  token?: string,
 ): Promise<ChatResponse> {
-  return post<ChatResponse>(`/node/${nodeId}/chat`, {
-    message,
-    history,
-    user_code: userCode,
-  });
+  return post<ChatResponse>(
+    `/node/${nodeId}/chat`,
+    {
+      message,
+      history,
+      user_code: userCode,
+    },
+    token,
+  );
 }
 
-/** (Re)generate expected spec for a coding node. */
 export async function regenerateSpec(
   nodeId: string,
   userLevel = "intermediate",
+  token?: string,
 ): Promise<{ expected_spec: ExpectedSpec }> {
-  return post<{ expected_spec: ExpectedSpec }>(`/node/${nodeId}/regenerate-spec`, {
-    user_level: userLevel,
-  });
+  return post<{ expected_spec: ExpectedSpec }>(
+    `/node/${nodeId}/regenerate-spec`,
+    { user_level: userLevel },
+    token,
+  );
 }
 
 // ── Level / File-tree / Completion endpoints ─────
 
-async function get<T>(path: string): Promise<T> {
+async function get<T>(path: string, token?: string): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${AGENTS_BASE}${path}`, {
     method: "GET",
-    headers: { "Content-Type": "application/json" },
+    headers,
   });
 
   if (!res.ok) {
@@ -299,36 +313,39 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** Fetch level-based roadmap with completion status. */
 export async function getRoadmapLevels(
   projectId: string,
+  token?: string,
 ): Promise<{ levels: RoadmapLevel[]; project_id: string }> {
   return get<{ levels: RoadmapLevel[]; project_id: string }>(
     `/project/${projectId}/roadmap-levels`,
+    token,
   );
 }
 
-/** Fetch file tree with completion status. */
 export async function getFileTree(
   projectId: string,
+  token?: string,
 ): Promise<{ file_tree: FileTreeEntry[]; progress: number }> {
   return get<{ file_tree: FileTreeEntry[]; progress: number }>(
     `/project/${projectId}/file-tree`,
+    token,
   );
 }
 
-/** Mark a node as completed. */
 export async function completeNode(
   nodeId: string,
+  token?: string,
 ): Promise<CompleteNodeResult> {
-  return post<CompleteNodeResult>(`/node/${nodeId}/complete`, {});
+  return post<CompleteNodeResult>(`/node/${nodeId}/complete`, {}, token);
 }
 
-/** Get documentation for a learn/setup node. */
 export async function getDocumentation(
   nodeId: string,
+  token?: string,
 ): Promise<{ documentation: Documentation | null }> {
   return get<{ documentation: Documentation | null }>(
     `/node/${nodeId}/documentation`,
+    token,
   );
 }

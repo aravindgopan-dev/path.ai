@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, Suspense } from "react"
 import CodeMirror from "@uiw/react-codemirror"
 import { javascript } from "@codemirror/lang-javascript"
 import { html } from "@codemirror/lang-html"
@@ -28,6 +28,7 @@ import {
   Rocket,
   Trophy,
 } from "lucide-react"
+import { useAuth } from "@clerk/nextjs"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -48,7 +49,6 @@ import {
   chatNode,
   completeNode,
   getDocumentation,
-  type Instruction,
   type Feedback,
   type ValidationResult,
   type Documentation,
@@ -66,10 +66,10 @@ const XTerminal = dynamic(
   }
 )
 
-type SidebarTab = "docs"
+type SidebarTab = "docs" | "agent"
 type CodeMode = "free" | "pseudo" | "scaffold"
 
-export default function PairProgrammer() {
+function PairProgrammerContent() {
   const [activeTab, setActiveTab] = useState<SidebarTab>("docs")
   const [codeMode, setCodeMode] = useState<CodeMode>("free")
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -79,6 +79,7 @@ export default function PairProgrammer() {
   const [validationExpanded, setValidationExpanded] = useState(false)
   const [isCompleting, setIsCompleting] = useState(false)
   const [completionSuccess, setCompletionSuccess] = useState(false)
+  const { getToken } = useAuth()
 
   // Zustand store
   const currentFile = useAppStore((s) => s.currentFile)
@@ -135,9 +136,10 @@ export default function PairProgrammer() {
     const fetchNodeData = async () => {
       setIsLoadingNode(true)
       try {
+        const token = await getToken()
         const [instrRes, skelRes] = await Promise.all([
-          getInstruction(activeNodeId, userLevel),
-          getSkeleton(activeNodeId, userLevel, codingMode),
+          getInstruction(activeNodeId, userLevel, token ?? undefined),
+          getSkeleton(activeNodeId, userLevel, codingMode, token ?? undefined),
         ])
 
         if (cancelled) return
@@ -170,14 +172,24 @@ export default function PairProgrammer() {
 
   // Fetch documentation when entering a LEARN / SETUP node
   useEffect(() => {
-    if (!activeNodeId || !isLearnOrSetup || documentation) return
+    if (!activeNodeId || !isLearnOrSetup) return;
+    
+    // If documentation is already in the node (consolidated), use it
+    if (activeNode?.documentation) {
+      setDocumentation(activeNode.documentation);
+      setIsLoadingNode(false);
+      return;
+    }
+
+    if (documentation) return;
 
     let cancelled = false
 
     const fetchDocs = async () => {
       setIsLoadingNode(true)
       try {
-        const res = await getDocumentation(activeNodeId)
+        const token = await getToken()
+        const res = await getDocumentation(activeNodeId, token ?? undefined)
         if (!cancelled) setDocumentation(res.documentation)
       } catch (err) {
         console.error("Failed to load documentation:", err)
@@ -188,7 +200,7 @@ export default function PairProgrammer() {
 
     fetchDocs()
     return () => { cancelled = true }
-  }, [activeNodeId, isLearnOrSetup])
+  }, [activeNodeId, isLearnOrSetup, activeNode?.documentation])
 
   // Sync file changes to sandbox
   useEffect(() => {
@@ -233,7 +245,8 @@ export default function PairProgrammer() {
 
     setIsLoadingNode(true)
     try {
-      const skelRes = await getSkeleton(activeNodeId, userLevel, nextMode)
+      const token = await getToken()
+      const skelRes = await getSkeleton(activeNodeId, userLevel, nextMode, token ?? undefined)
       setSkeletonFiles(skelRes.skeleton)
 
       if (skelRes.skeleton?.files?.length) {
@@ -265,14 +278,16 @@ export default function PairProgrammer() {
         filename: f.name,
         content: f.content,
       }))
-      const result = await validateNode(activeNodeId, files)
+      const token = await getToken()
+      const result = await validateNode(activeNodeId, files, token ?? undefined)
       setValidationResult(result.validation)
       setFeedback(result.feedback)
 
       // Auto-complete if validation passes
       if (result.validation.status === "pass") {
         try {
-          await completeNode(activeNodeId)
+          const token = await getToken()
+          await completeNode(activeNodeId, token ?? undefined)
           markNodeCompleted(activeNodeId)
           setCompletionSuccess(true)
           setTimeout(() => setCompletionSuccess(false), 3000)
@@ -292,7 +307,8 @@ export default function PairProgrammer() {
     if (!activeNodeId) return
     setIsCompleting(true)
     try {
-      await completeNode(activeNodeId)
+      const token = await getToken()
+      await completeNode(activeNodeId, token ?? undefined)
       markNodeCompleted(activeNodeId)
       setCompletionSuccess(true)
       setTimeout(() => setCompletionSuccess(false), 3000)
@@ -681,6 +697,21 @@ export default function PairProgrammer() {
   )
 }
 
+export default function PairProgrammer() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen w-full items-center justify-center bg-background text-muted-foreground">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p>Loading editor...</p>
+        </div>
+      </div>
+    }>
+      <PairProgrammerContent />
+    </Suspense>
+  )
+}
+
 // ── Helper ────────────────────────────────────────
 function guessLanguage(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase() ?? ""
@@ -934,6 +965,7 @@ function AgentPanel({ nodeId }: { nodeId: string | null }) {
   const chatHistory = useAppStore((s) => s.chatHistory)
   const addChatMessage = useAppStore((s) => s.addChatMessage)
   const openFiles = useAppStore((s) => s.openFiles)
+  const { getToken } = useAuth()
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -950,7 +982,8 @@ function AgentPanel({ nodeId }: { nodeId: string | null }) {
 
     try {
       const userCode = openFiles?.map((f) => `--- ${f.name} ---\n${f.content}`).join("\n\n") ?? ""
-      const res = await chatNode(nodeId, userMsg.content, chatHistory, userCode)
+      const token = await getToken()
+      const res = await chatNode(nodeId, userMsg.content, chatHistory, userCode, token ?? undefined)
       addChatMessage({ role: "assistant", content: res.response })
     } catch (err) {
       addChatMessage({ role: "assistant", content: "Sorry, something went wrong. Please try again." })
@@ -1027,7 +1060,7 @@ function InstructionPanel({
   isLoading,
   node,
 }: {
-  instruction: Instruction | null
+  instruction: Documentation | null
   isLoading: boolean
   node?: { id: string; title: string; description: string; type: string } | null
 }) {
@@ -1058,7 +1091,7 @@ function InstructionPanel({
               <div className="space-y-1">
                 <h3 className="font-semibold text-xs">Constraints</h3>
                 <ul className="space-y-0.5 text-muted-foreground list-disc list-inside">
-                  {instruction.constraints.map((c, i) => (
+                  {instruction.constraints.map((c: string, i: number) => (
                     <li key={i}>{c}</li>
                   ))}
                 </ul>
@@ -1071,7 +1104,7 @@ function InstructionPanel({
                 <div className="space-y-1">
                   <h3 className="font-semibold text-xs">Learning Focus</h3>
                   <ul className="space-y-0.5 text-muted-foreground list-disc list-inside">
-                    {instruction.learning_focus.map((f, i) => (
+                    {instruction.learning_focus.map((f: string, i: number) => (
                       <li key={i}>{f}</li>
                     ))}
                   </ul>
@@ -1079,16 +1112,16 @@ function InstructionPanel({
               </>
             )}
 
-            {instruction.files_involved?.length > 0 && (
+            {instruction.algorithm_steps?.length > 0 && (
               <>
                 <Separator />
                 <div className="space-y-1">
-                  <h3 className="font-semibold text-xs">Files Involved</h3>
-                  <div className="flex flex-wrap gap-1">
-                    {instruction.files_involved.map((f, i) => (
-                      <Badge key={i} variant="secondary" className="text-[10px]">{f}</Badge>
+                  <h3 className="font-semibold text-xs">Steps</h3>
+                  <ul className="space-y-0.5 text-muted-foreground list-decimal list-inside">
+                    {instruction.algorithm_steps.map((f: string, i: number) => (
+                      <li key={i}>{f}</li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               </>
             )}
