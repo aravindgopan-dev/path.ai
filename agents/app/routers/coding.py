@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -27,7 +28,7 @@ class InstructionRequest(BaseModel):
 
 class SkeletonRequest(BaseModel):
     user_level: str = "intermediate"
-    mode: str = "signature"  # "signature" | "free"
+    mode: str = "free"  # "free" | "help"
 
 
 class ValidateRequest(BaseModel):
@@ -42,6 +43,11 @@ class ChatRequest(BaseModel):
 
 class RegenerateSpecRequest(BaseModel):
     user_level: str = "intermediate"
+
+
+class HelpRequest(BaseModel):
+    user_level: str = "intermediate"
+    files: list[dict] = Field(..., description="[{filename, content}]")
 
 
 # ── Helpers ────────────────────────────────────────
@@ -115,7 +121,7 @@ async def get_skeleton(node_id: str, body: SkeletonRequest, db: Session = Depend
     project = _get_project_for_node(node, db)
     blueprint = project.get_blueprint()
 
-    mode = body.mode if body.mode in ("signature", "free") else "signature"
+    mode = body.mode if body.mode in ("free", "help") else "free"
 
     # 1. Check cache (note: currently caches by node, independent of level/mode for simplicity)
     # Improvement: could cache keying by (node_id, user_level, mode)
@@ -154,10 +160,17 @@ async def validate_node(node_id: str, body: ValidateRequest, db: Session = Depen
             detail="No expected_spec found for this node. Generate one first via POST /node/{id}/regenerate-spec.",
         )
 
-    # 1. Deterministic validation
-    validation_result = validate_code(
+    project = _get_project_for_node(node, db)
+    blueprint = project.get_blueprint()
+    node_objective = node.get_metadata().get("objective", node.description)
+
+    # 1. AI-Driven Validation (replaces structural check + legacy feedback agent)
+    validation_result = await validate_code(
+        blueprint=blueprint,
+        node=_node_as_dict(node),
         user_files=body.files,
         expected_spec=expected_spec,
+        node_objective=node_objective,
     )
 
     # 2. Auto-complete node if validation passes
@@ -165,34 +178,38 @@ async def validate_node(node_id: str, body: ValidateRequest, db: Session = Depen
         node.completed = True
         db.commit()
 
-    # 3. LLM feedback on the result
-    user_code_summary = "\n\n".join(
-        f"--- {f.get('filename', 'unknown')} ---\n{f.get('content', '')[:2000]}"
-        for f in body.files
-    )
-
-    node_objective = node.get_metadata().get("objective", node.description)
-
-    feedback = await generate_feedback(
-        validation_result=validation_result,
-        user_code_summary=user_code_summary,
-        expected_spec=expected_spec,
-        node_objective=node_objective,
-    )
-
     return {
         "validation": validation_result,
-        "feedback": feedback,
+        "feedback": {
+            "feedback_message": "Validation complete.",
+            "hints": validation_result.get("notes", []),
+            "improvement_points": validation_result.get("missing_items", []),
+        },
     }
 
 
 @router.get("/{node_id}/documentation")
-def get_documentation(node_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
-    """Return pre-generated documentation for a learn/setup node."""
+async def get_documentation(node_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
+    """Return pre-generated documentation for a learn/setup node, or generate it on-demand."""
     node = _get_node_or_404(node_id, db, user_id)
     doc = node.get_documentation()
-    if not doc:
-        return {"documentation": None}
+    
+    if doc:
+        return {"documentation": doc}
+        
+    # Generate on-demand if it doesn't exist
+    project = _get_project_for_node(node, db)
+    blueprint = project.get_blueprint()
+
+    doc = await generate_documentation(
+        blueprint=blueprint,
+        node=_node_as_dict(node),
+        user_level="intermediate", # Defaulting to intermediate for on-demand Generation
+    )
+
+    node.set_documentation(doc)
+    db.commit()
+
     return {"documentation": doc}
 
 
@@ -239,7 +256,7 @@ async def chat(node_id: str, body: ChatRequest, db: Session = Depends(get_db), u
 @router.post("/{node_id}/regenerate-spec")
 async def regenerate_spec(node_id: str, body: RegenerateSpecRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """(Re)generate the expected spec for a coding node and persist it."""
-    node = _get_node_or_404(node_id, db)
+    node = _get_node_or_404(node_id, db, user_id)
     project = _get_project_for_node(node, db)
     blueprint = project.get_blueprint()
 
@@ -253,3 +270,22 @@ async def regenerate_spec(node_id: str, body: RegenerateSpecRequest, db: Session
     db.commit()
 
     return {"expected_spec": spec}
+
+
+@router.post("/{node_id}/help")
+async def get_help(node_id: str, body: HelpRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
+    """Add mentor comments/TODOs to existing user code."""
+    node = _get_node_or_404(node_id, db, user_id)
+    project = _get_project_for_node(node, db)
+    blueprint = project.get_blueprint()
+
+    # We reuse the skeleton agent but with a 'help' mode (to be implemented in the agent)
+    result = await generate_skeleton(
+        blueprint=blueprint,
+        node=_node_as_dict(node),
+        user_level=body.user_level,
+        mode="help",
+        user_code=json.dumps(body.files),
+    )
+
+    return {"skeleton": result}

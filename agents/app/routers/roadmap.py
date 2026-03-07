@@ -160,8 +160,8 @@ async def generate_roadmap(body: RoadmapRequest, db: Session = Depends(get_db), 
         # Map specialized fields to existing DB columns
         if node_data.get("type") == "coding":
             # Store algorithm in instruction_json
-            if node_data.get("algorithm"):
-                db_node.set_instruction({"algorithm": node_data["algorithm"]})
+            if node_data.get("algorithm_steps"):
+                db_node.set_instruction({"algorithm_steps": node_data["algorithm_steps"]})
             # Store validation rules and files in expected_spec_json
             spec = {
                 "validation_rules": node_data.get("validation_rules", []),

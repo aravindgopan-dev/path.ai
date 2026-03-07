@@ -13,12 +13,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.utils.model_factory import get_medium_llm
-from app.utils.prompts import (
-    SKELETON_SYSTEM,
-    SKELETON_USER,
-    SKELETON_FREE_SYSTEM,
-    SKELETON_FREE_USER,
-)
+from app.utils import prompts
 from app.schemas import SkeletonSchema
 
 
@@ -27,17 +22,22 @@ async def generate_skeleton(
     node: dict,
     user_level: str,
     mode: str = "signature",
+    user_code: str = "No code provided yet.",
 ) -> dict[str, Any]:
-    """Return partial file scaffolds."""
+    """Return partial file scaffolds or mentor help."""
     llm = get_medium_llm(temperature=0.3)
     structured_llm = llm.with_structured_output(SkeletonSchema)
 
-    if mode == "free":
-        system_prompt = SKELETON_FREE_SYSTEM
-        user_prompt = SKELETON_FREE_USER
+    if mode == "help":
+        system_prompt = prompts.HELP_SYSTEM
+        user_prompt = prompts.HELP_USER
+    elif mode == "free":
+        system_prompt = prompts.SKELETON_FREE_SYSTEM
+        user_prompt = prompts.SKELETON_FREE_USER
     else:
-        system_prompt = SKELETON_SYSTEM
-        user_prompt = SKELETON_USER
+        # Fallback to free if mode is unknown or signature
+        system_prompt = prompts.SKELETON_FREE_SYSTEM
+        user_prompt = prompts.SKELETON_FREE_USER
 
     messages = [
         SystemMessage(content=system_prompt),
@@ -46,6 +46,7 @@ async def generate_skeleton(
                 blueprint_json=json.dumps(blueprint, indent=2),
                 node_json=json.dumps(node, indent=2),
                 level=user_level,
+                user_code=user_code,
             )
         ),
     ]

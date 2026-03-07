@@ -168,7 +168,13 @@ export default function RoadmapPage() {
   const handleStartNode = (node: RoadmapNode) => {
     setActiveNodeId(node.id);
     setIsModalOpen(false);
-    router.push(`/pair-programmer?id=${node.id}`);
+    if (node.type === "setup") {
+      router.push(`/setup?id=${node.id}`);
+    } else if (node.type === "learn") {
+      router.push(`/learn?id=${node.id}`);
+    } else {
+      router.push(`/pair-programmer?id=${node.id}`);
+    }
   };
 
   const initialNodes: Node[] = useMemo(() => {

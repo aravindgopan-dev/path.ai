@@ -60,6 +60,7 @@ export interface RoadmapNode {
   expected_spec?: ExpectedSpec;
   documentation?: Documentation;
   metadata?: Record<string, any>;
+  files?: string[];
 }
 
 export interface RoadmapLevel {
@@ -80,13 +81,16 @@ export interface FileTreeEntry {
 }
 
 export interface Documentation {
+  title?: string;
   explanation: string;
   objective: string;
   algorithm_steps: string[];
+  setup_commands?: string[];
   constraints: string[];
   learning_focus: string[];
   common_mistakes: string[];
   implementation_strategy: string[];
+  files_involved: string[];
 }
 
 export interface CompleteNodeResult {
@@ -244,12 +248,25 @@ export async function getInstruction(
 export async function getSkeleton(
   nodeId: string,
   userLevel = "intermediate",
-  mode: "signature" | "free" = "signature",
+  mode: "free" | "help" = "free",
   token?: string,
 ): Promise<{ skeleton: Skeleton }> {
   return post<{ skeleton: Skeleton }>(
     `/node/${nodeId}/skeleton`,
     { user_level: userLevel, mode },
+    token,
+  );
+}
+
+export async function getHelp(
+  nodeId: string,
+  files: Array<{ filename: string; content: string }>,
+  userLevel = "intermediate",
+  token?: string,
+): Promise<{ skeleton: Skeleton }> {
+  return post<{ skeleton: Skeleton }>(
+    `/node/${nodeId}/help`,
+    { user_level: userLevel, files },
     token,
   );
 }
