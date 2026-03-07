@@ -89,9 +89,6 @@ interface AppState {
     fileTree: FileTreeEntry[];
     setFileTree: (tree: FileTreeEntry[]) => void;
 
-    codingMode: "signature" | "free";
-    setCodingMode: (mode: "signature" | "free") => void;
-
     documentation: Documentation | null;
     setDocumentation: (doc: Documentation | null) => void;
 
@@ -176,7 +173,6 @@ export const useAppStore = create<AppState>()(
             currentLevelId: null,
             completedNodes: [],
             fileTree: [],
-            codingMode: 'signature' as const,
             documentation: null,
             projectSummary: '',
             techStack: [],
@@ -196,7 +192,6 @@ export const useAppStore = create<AppState>()(
                     return state;
                 }),
             setFileTree: (tree) => set({ fileTree: tree }),
-            setCodingMode: (mode) => set({ codingMode: mode }),
             setDocumentation: (doc) => set({ documentation: doc }),
             setProjectSummary: (s) => set({ projectSummary: s }),
             setTechStack: (ts) => set({ techStack: ts }),
@@ -210,11 +205,8 @@ export const useAppStore = create<AppState>()(
                 activeNodeId: id,
                 // Reset per-node transient state when switching nodes
                 instruction: null,
-                skeletonFiles: null,
-                validationResult: null,
                 feedback: null,
                 chatHistory: [],
-                codingMode: 'signature' as const,
                 documentation: null,
             }),
 
@@ -293,7 +285,6 @@ export const useAppStore = create<AppState>()(
                     currentLevelId: null,
                     completedNodes: [],
                     fileTree: [],
-                    codingMode: 'signature' as const,
                     documentation: null,
                     projectSummary: '',
                     techStack: [],
@@ -326,7 +317,6 @@ export const useAppStore = create<AppState>()(
                 currentLevelId: state.currentLevelId,
                 completedNodes: state.completedNodes,
                 fileTree: state.fileTree,
-                codingMode: state.codingMode,
                 projectSummary: state.projectSummary,
                 techStack: state.techStack,
                 projectId: state.projectId,

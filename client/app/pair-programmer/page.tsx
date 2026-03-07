@@ -49,6 +49,7 @@ import {
   chatNode,
   completeNode,
   getDocumentation,
+  getHelp,
   type Feedback,
   type ValidationResult,
   type Documentation,
@@ -114,8 +115,6 @@ function PairProgrammerContent() {
   const feedback = useAppStore((s) => s.feedback)
   const setFeedback = useAppStore((s) => s.setFeedback)
   const roadmapNodes = useAppStore((s) => s.roadmapNodes)
-  const codingMode = useAppStore((s) => s.codingMode)
-  const setCodingMode = useAppStore((s) => s.setCodingMode)
   const documentation = useAppStore((s) => s.documentation)
   const setDocumentation = useAppStore((s) => s.setDocumentation)
   const markNodeCompleted = useAppStore((s) => s.markNodeCompleted)
@@ -137,24 +136,22 @@ function PairProgrammerContent() {
       setIsLoadingNode(true)
       try {
         const token = await getToken()
-        const [instrRes, skelRes] = await Promise.all([
+        const [instrRes] = await Promise.all([
           getInstruction(activeNodeId, userLevel, token ?? undefined),
-          getSkeleton(activeNodeId, userLevel, codingMode, token ?? undefined),
         ])
 
         if (cancelled) return
 
         setInstruction(instrRes.instruction)
-        setSkeletonFiles(skelRes.skeleton)
 
-        // Populate editor tabs with skeleton files
-        if (skelRes.skeleton?.files?.length) {
-          const files = skelRes.skeleton.files.map((f) => ({
-            name: f.filename,
-            language: guessLanguage(f.filename),
+        // Populate editor with initial files from Roadmap spec if present
+        if (activeNode?.files?.length && openFiles.length === 0) {
+          const files = activeNode.files.map((f: string) => ({
+            name: f,
+            language: guessLanguage(f),
             description: "",
-            content: f.content,
-            path: f.filename,
+            content: `// ${f}\n// Start coding here...`,
+            path: f,
           }))
           setOpenFiles(files)
           setCurrentFile(files[0])
@@ -181,7 +178,8 @@ function PairProgrammerContent() {
       return;
     }
 
-    if (documentation) return;
+    // If we already have it or are already loading, don't fetch
+    if (documentation || isLoadingNode) return;
 
     let cancelled = false
 
@@ -200,7 +198,7 @@ function PairProgrammerContent() {
 
     fetchDocs()
     return () => { cancelled = true }
-  }, [activeNodeId, isLearnOrSetup, activeNode?.documentation])
+  }, [activeNodeId, isLearnOrSetup, activeNode?.documentation, documentation, isLoadingNode, getToken])
 
   // Sync file changes to sandbox
   useEffect(() => {
@@ -237,35 +235,6 @@ function PairProgrammerContent() {
     setIsMounted(true)
   }, [])
 
-  // ── Mode toggle handler: re-fetch skeleton ─────
-  const handleModeToggle = useCallback(async () => {
-    if (!activeNodeId) return
-    const nextMode = codingMode === "signature" ? "free" : "signature"
-    setCodingMode(nextMode)
-
-    setIsLoadingNode(true)
-    try {
-      const token = await getToken()
-      const skelRes = await getSkeleton(activeNodeId, userLevel, nextMode, token ?? undefined)
-      setSkeletonFiles(skelRes.skeleton)
-
-      if (skelRes.skeleton?.files?.length) {
-        const files = skelRes.skeleton.files.map((f) => ({
-          name: f.filename,
-          language: guessLanguage(f.filename),
-          description: "",
-          content: f.content,
-          path: f.filename,
-        }))
-        setOpenFiles(files)
-        setCurrentFile(files[0])
-      }
-    } catch (err) {
-      console.error("Failed to reload skeleton:", err)
-    } finally {
-      setIsLoadingNode(false)
-    }
-  }, [activeNodeId, codingMode, userLevel])
 
   // ── Validate handler ────────────────────────────
   const handleValidate = async () => {
@@ -299,6 +268,35 @@ function PairProgrammerContent() {
       console.error("Validation failed:", err)
     } finally {
       setIsValidating(false)
+    }
+  }
+
+  // ── Help handler (annotate code with comments) ──
+  const handleHelp = async () => {
+    if (!activeNodeId || !openFiles?.length) return
+
+    setIsLoadingNode(true)
+    try {
+      const files = openFiles.map((f) => ({
+        filename: f.name,
+        content: f.content,
+      }))
+      const token = await getToken()
+      const helpRes = await getHelp(activeNodeId, files, userLevel, token ?? undefined)
+      
+      if (helpRes.skeleton?.files?.length) {
+        const updatedFiles = openFiles.map(existing => {
+          const match = helpRes.skeleton.files.find(f => f.filename === existing.name)
+          return match ? { ...existing, content: match.content } : existing
+        })
+        setOpenFiles(updatedFiles)
+        const updatedCurrent = updatedFiles.find(f => f.name === currentFile?.name)
+        if (updatedCurrent) setCurrentFile(updatedCurrent)
+      }
+    } catch (err) {
+      console.error("Failed to get mentor help:", err)
+    } finally {
+      setIsLoadingNode(false)
     }
   }
 
@@ -453,18 +451,18 @@ function PairProgrammerContent() {
                       )}
                     </div>
 
-                    {/* Mode Toggle */}
+
+                    {/* Help Button */}
                     {activeNodeId && (
                       <Button
                         size="sm"
-                        variant="ghost"
-                        className="mx-1 shrink-0 gap-1.5 text-xs"
-                        onClick={handleModeToggle}
+                        variant="outline"
+                        className="mx-1 shrink-0 gap-1.5 text-xs text-blue-400 border-blue-400/30 hover:bg-blue-400/10"
+                        onClick={handleHelp}
                         disabled={isLoadingNode}
-                        title={codingMode === "signature" ? "Switch to Free Mode" : "Switch to Signature Mode"}
                       >
-                        {codingMode === "signature" ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
-                        {codingMode === "signature" ? "Signature" : "Free"}
+                         <Lightbulb size={14} />
+                         Help
                       </Button>
                     )}
 
@@ -683,7 +681,7 @@ function PairProgrammerContent() {
         <div className="flex items-center gap-2 px-1.5">
           {activeNode && <span className="truncate max-w-[200px]">{activeNode.title}</span>}
           <Badge variant="secondary" className="text-[10px]">
-            {nodeType === "code" ? (codingMode === "signature" ? "Signature Mode" : "Free Mode") :
+            {nodeType === "code" ? "Coding" :
              nodeType === "learn" ? "Learn" : "Setup"}
           </Badge>
           {isNodeCompleted && (
@@ -945,6 +943,20 @@ function DocumentationPanel({
                 </div>
               </>
             )}
+
+            {documentation.files_involved?.length > 0 && (
+              <>
+                <Separator />
+                <div className="space-y-1">
+                  <h3 className="font-semibold text-xs">Files Involved</h3>
+                  <ul className="space-y-0.5 text-muted-foreground list-disc list-inside">
+                    {documentation.files_involved.map((f, i) => (
+                      <li key={i} className="font-mono text-[10px]">{f}</li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div className="text-center py-12 text-muted-foreground">
@@ -1120,6 +1132,20 @@ function InstructionPanel({
                   <ul className="space-y-0.5 text-muted-foreground list-decimal list-inside">
                     {instruction.algorithm_steps.map((f: string, i: number) => (
                       <li key={i}>{f}</li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+
+            {instruction.files_involved?.length > 0 && (
+              <>
+                <Separator />
+                <div className="space-y-1">
+                  <h3 className="font-semibold text-xs">Files Involved</h3>
+                  <ul className="space-y-0.5 text-muted-foreground list-disc list-inside">
+                    {instruction.files_involved.map((f: string, i: number) => (
+                      <li key={i} className="font-mono text-[10px]">{f}</li>
                     ))}
                   </ul>
                 </div>

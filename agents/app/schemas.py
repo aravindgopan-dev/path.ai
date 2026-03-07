@@ -42,6 +42,7 @@ class DocumentationSchema(BaseModel):
     learning_focus: List[str] = Field(default_factory=list, description="What the student should focus on learning")
     common_mistakes: List[str] = Field(default_factory=list, description="Things beginners get wrong here")
     implementation_strategy: List[str] = Field(default_factory=list, description="Best practices for implementation")
+    files_involved: List[str] = Field(default_factory=list, description="Files the student will create or modify")
 
 
 class ValidationRuleSchema(BaseModel):
@@ -73,7 +74,7 @@ class RoadmapNodeSchema(BaseModel):
     dependencies: List[str] = Field(default_factory=list, description="IDs of nodes this node depends on")
     
     # For 'coding' nodes
-    algorithm: Optional[List[str]] = Field(None, description="Step-by-step logic for coding tasks")
+    algorithm_steps: Optional[List[str]] = Field(None, description="Step-by-step logic for coding tasks")
     validation_rules: Optional[List[ValidationRuleSchema]] = Field(None, description="Evaluation metrics/patterns")
     files: Optional[List[str]] = Field(None, description="Files involved in this coding task")
     blueprint_spec: Optional[ExpectedSpecSchema] = Field(None, description="Technical spec (optional if inferred from above)")
