@@ -58,7 +58,7 @@ export function XTerminal() {
     // Connection status
     socket.on("connect", () => {
       term.writeln("\x1b[32m✓ Connected to backend\x1b[0m")
-      term.write("$ ")
+      term.write("\x1b[1;32maravindgopan@MSI\x1b[0m:\x1b[1;34m~\x1b[0m$ ")
     })
 
     socket.on("disconnect", () => {
@@ -79,20 +79,20 @@ export function XTerminal() {
       if (data.code !== 0) {
         term.writeln(`\x1b[33m${data.message}\x1b[0m`) // Yellow for non-zero exit
       }
-      term.write("$ ")
+      term.write("\x1b[1;32maravindgopan@MSI\x1b[0m:\x1b[1;34m~\x1b[0m$ ")
       currentLineRef.current = ""
     })
 
     // Handle command errors
     socket.on("command-error", (data: { error: string }) => {
       term.writeln(`\x1b[31mError: ${data.error}\x1b[0m`)
-      term.write("$ ")
+      term.write("\x1b[1;32maravindgopan@MSI\x1b[0m:\x1b[1;34m~\x1b[0m$ ")
       currentLineRef.current = ""
     })
 
     // If already connected, show prompt
     if (socket.connected) {
-      term.write("$ ")
+      term.write("\x1b[1;32maravindgopan@MSI\x1b[0m:\x1b[1;34m~\x1b[0m$ ")
     }
 
     // Handle data input
@@ -109,7 +109,7 @@ export function XTerminal() {
           // Send command to backend via Socket.IO
           socket.emit("execute-command", command)
         } else {
-          term.write("$ ")
+          term.write("\x1b[1;32maravindgopan@MSI\x1b[0m:\x1b[1;34m~\x1b[0m$ ")
         }
         
         currentLineRef.current = ""
@@ -124,13 +124,13 @@ export function XTerminal() {
       // Handle Ctrl+C
       else if (code === 3) {
         term.writeln("^C")
-        term.write("$ ")
+        term.write("\x1b[1;32maravindgopan@MSI\x1b[0m:\x1b[1;34m~\x1b[0m$ ")
         currentLineRef.current = ""
       }
       // Handle Ctrl+L (clear screen)
       else if (code === 12) {
         term.clear()
-        term.write("$ ")
+        term.write("\x1b[1;32maravindgopan@MSI\x1b[0m:\x1b[1;34m~\x1b[0m$ ")
         currentLineRef.current = ""
       }
       // Handle regular characters

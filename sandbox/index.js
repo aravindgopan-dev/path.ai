@@ -57,11 +57,31 @@ io.on("connection", (socket) => {
 
     // Stream stdout to client
     shell.stdout.on("data", (data) => {
-        const output = data.toString().replace(/\n/g, '\r\n');
-        socket.emit("command-output", {
-            type: "stdout",
-            data: output
+        let output = data.toString();
+        
+        const markerRegex = /__CMD_DONE__:(\d+)\r?\n?/g;
+        let hasMarker = false;
+        let lastExitCode = 0;
+        
+        output = output.replace(markerRegex, (fullMatch, code) => {
+            hasMarker = true;
+            lastExitCode = parseInt(code, 10);
+            return '';
         });
+        
+        if (output) {
+            socket.emit("command-output", {
+                type: "stdout",
+                data: output.replace(/\n/g, '\r\n')
+            });
+        }
+        
+        if (hasMarker) {
+            socket.emit("command-complete", {
+                code: lastExitCode,
+                message: lastExitCode === 0 ? "Success" : `Command failed with exit code ${lastExitCode}`
+            });
+        }
     });
 
     // Stream stderr to client
@@ -201,6 +221,8 @@ io.on("connection", (socket) => {
 
         // Write command to shell stdin
         shell.stdin.write(command + '\n');
+        // Add a marker to determine when the command is finished
+        shell.stdin.write('echo "__CMD_DONE__:$?"\n');
     });
 
     // Handle disconnection
