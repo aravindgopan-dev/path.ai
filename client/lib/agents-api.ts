@@ -8,6 +8,55 @@
 const AGENTS_BASE =
   process.env.NEXT_PUBLIC_AGENTS_BASE_URL ?? "http://localhost:8000";
 
+function getAgentsBaseCandidates(): string[] {
+  const primary = AGENTS_BASE.replace(/\/+$/, "");
+  const candidates = [primary];
+
+  let primaryUrl: URL | null = null;
+  try {
+    primaryUrl = new URL(primary);
+  } catch {
+    primaryUrl = null;
+  }
+
+  if (primary.includes("localhost")) {
+    candidates.push(primary.replace("localhost", "127.0.0.1"));
+  } else if (primary.includes("127.0.0.1")) {
+    candidates.push(primary.replace("127.0.0.1", "localhost"));
+  }
+
+  if (typeof window !== "undefined" && primaryUrl) {
+    const runtimeHost = window.location.hostname;
+    const runtimeProtocol = primaryUrl.protocol;
+    const runtimePort = primaryUrl.port || "8000";
+    const runtimeBase = `${runtimeProtocol}//${runtimeHost}:${runtimePort}`;
+    candidates.push(runtimeBase);
+
+    if (runtimeHost === "localhost") {
+      candidates.push(`${runtimeProtocol}//127.0.0.1:${runtimePort}`);
+    } else if (runtimeHost === "127.0.0.1") {
+      candidates.push(`${runtimeProtocol}//localhost:${runtimePort}`);
+    }
+  }
+
+  return Array.from(new Set(candidates));
+}
+
+async function fetchWithBaseFallback(path: string, init: RequestInit): Promise<Response> {
+  const bases = getAgentsBaseCandidates();
+  let lastError: unknown = null;
+
+  for (const base of bases) {
+    try {
+      return await fetch(`${base}${path}`, init);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new TypeError("Failed to fetch");
+}
+
 // ── Types ────────────────────────────────────────
 
 export interface AgentFeature {
@@ -36,7 +85,7 @@ export interface Blueprint {
     type: "file" | "directory";
     description: string;
   }>;
-  learning_objectives: string[];
+  learning_objectives: string[] | null;
   non_functional_requirements: Record<string, string>;
 }
 
@@ -44,6 +93,14 @@ export interface Skill {
   id: string;
   name: string;
   description: string;
+}
+
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  description: string;
+  tech_stack: string[];
+  created_at: string;
 }
 
 export interface RoadmapNode {
@@ -91,6 +148,7 @@ export interface Documentation {
   common_mistakes: string[];
   implementation_strategy: string[];
   files_involved: string[];
+  resources?: Array<{ title: string; url: string; description: string }>;
 }
 
 export interface CompleteNodeResult {
@@ -133,6 +191,48 @@ export interface ChatResponse {
   response: string;
 }
 
+// ── NEW ROADMAP FORMAT ────────────────────────
+
+export interface RoadmapFileInfo {
+  path: string;
+  role: "primary" | "reference" | "create";
+}
+
+export interface GeneratedRoadmapLevel {
+  level_id: number;
+  type: "setup" | "learning" | "coding";
+  title: string;
+  description: string;
+  tasks: string[];
+  files: RoadmapFileInfo[];
+  terminal_commands?: string[];
+  validation_criteria?: string[];
+}
+
+export interface RoadmapOutput {
+  roadmap: GeneratedRoadmapLevel[];
+  project_id: string;
+  total_levels: number;
+}
+
+// ── TUTOR DOCUMENTATION ──────────────────────
+
+export interface TutorResource {
+  title: string;
+  url: string;
+  description: string;
+}
+
+export interface TutorDocumentation {
+  title: string;
+  definition: string;
+  why_it_matters: string;
+  key_concepts: string[];
+  resources: TutorResource[];
+  example_code?: string;
+  common_mistakes: string[];
+}
+
 export interface ExpectedSpec {
   required_routes: string[];
   required_functions: string[];
@@ -149,7 +249,7 @@ async function post<T>(path: string, body: unknown, token?: string): Promise<T> 
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${AGENTS_BASE}${path}`, {
+  const res = await fetchWithBaseFallback(path, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -170,8 +270,8 @@ export async function analyseIdea(idea: string, token?: string): Promise<Archite
 export async function generateBlueprint(
   params: {
     project_summary: string;
-    selected_features: AgentFeature[];
-    tech_stack: string[];
+    suggested_features: AgentFeature[];
+    recommended_tech_stack: string[];
     user_level: string;
   },
   token?: string,
@@ -187,7 +287,22 @@ export async function assessSkills(
   },
   token?: string,
 ): Promise<{ skills: Skill[] }> {
-  return post<{ skills: Skill[] }>("/skills", params, token);
+  const result = await post<{ skills?: Skill[] } | null>("/skills", params, token);
+  return { skills: Array.isArray(result?.skills) ? result.skills : [] };
+}
+
+export async function saveSelectedSkills(
+  params: {
+    project_id: string;
+    selected_skills: Skill[];
+  },
+  token?: string,
+): Promise<{ status: string; message: string; learning_objectives: string[] | null }> {
+  return post<{ status: string; message: string; learning_objectives: string[] | null }>(
+    "/skills/save",
+    params,
+    token
+  );
 }
 
 export async function generateRoadmap(
@@ -197,9 +312,26 @@ export async function generateRoadmap(
     suggested_skills: Skill[];
   },
   token?: string,
-): Promise<{ roadmap: RoadmapNode[]; project_id: string; file_tree: FileTreeEntry[] }> {
-  return post<{ roadmap: RoadmapNode[]; project_id: string; file_tree: FileTreeEntry[] }>(
+): Promise<RoadmapOutput> {
+  return post<RoadmapOutput>(
     "/roadmap",
+    params,
+    token
+  );
+}
+
+export async function getTutorDocumentation(
+  params: {
+    level_title: string;
+    level_description: string;
+    level_tasks: string[];
+    tech_stack: string[];
+    difficulty_target: string;
+  },
+  token?: string,
+): Promise<TutorDocumentation> {
+  return post<TutorDocumentation>(
+    "/tutor",
     params,
     token
   );
@@ -235,7 +367,7 @@ export async function getFlatRoadmap(
 
 export async function getInstruction(
   nodeId: string,
-  userLevel = "intermediate",
+  userLevel = "beginner",
   token?: string,
 ): Promise<{ instruction: Documentation }> {
   return post<{ instruction: Documentation }>(
@@ -247,7 +379,7 @@ export async function getInstruction(
 
 export async function getSkeleton(
   nodeId: string,
-  userLevel = "intermediate",
+  userLevel = "beginner",
   mode: "free" | "help" = "free",
   token?: string,
 ): Promise<{ skeleton: Skeleton }> {
@@ -261,7 +393,7 @@ export async function getSkeleton(
 export async function getHelp(
   nodeId: string,
   files: Array<{ filename: string; content: string }>,
-  userLevel = "intermediate",
+  userLevel = "beginner",
   token?: string,
 ): Promise<{ skeleton: Skeleton }> {
   return post<{ skeleton: Skeleton }>(
@@ -299,12 +431,56 @@ export async function chatNode(
 
 export async function regenerateSpec(
   nodeId: string,
-  userLevel = "intermediate",
+  userLevel = "beginner",
   token?: string,
 ): Promise<{ expected_spec: ExpectedSpec }> {
   return post<{ expected_spec: ExpectedSpec }>(
     `/node/${nodeId}/regenerate-spec`,
     { user_level: userLevel },
+    token,
+  );
+}
+
+// ── New Spec & Skeleton endpoints for Roadmap nodes ──────
+
+export interface NodeSpecSetup {
+  node_type: "setup";
+  instructions: string[];
+  files_to_create: string[];
+  validation_steps: string[];
+}
+
+export interface NodeSpecCoding {
+  node_type: "coding";
+  task_overview: string;
+  technical_requirements: string[];
+  files_to_modify_or_create: string[];
+  step_by_step_guide: string[];
+  validation_criteria: string[];
+}
+
+export type NodeSpec = NodeSpecSetup | NodeSpecCoding;
+
+export async function getSpecForLevel(
+  projectId: string,
+  levelId: number,
+  token?: string,
+): Promise<{ level_id: number; level_type: string; spec: NodeSpec }> {
+  return post<{ level_id: number; level_type: string; spec: NodeSpec }>(
+    "/node/spec",
+    { project_id: projectId, level_id: levelId },
+    token,
+  );
+}
+
+export async function getSkeletonForLevel(
+  projectId: string,
+  levelId: number,
+  token?: string,
+): Promise<{ level_id: number; skeleton: Skeleton }> {
+  return post<{ level_id: number; skeleton: Skeleton }>(
+    "/node/skeleton",
+    { project_id: projectId, level_id: levelId },
     token,
   );
 }
@@ -317,7 +493,7 @@ async function get<T>(path: string, token?: string): Promise<T> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${AGENTS_BASE}${path}`, {
+  const res = await fetchWithBaseFallback(path, {
     method: "GET",
     headers,
   });
@@ -365,4 +541,34 @@ export async function getDocumentation(
     `/node/${nodeId}/documentation`,
     token,
   );
+}
+
+// ── Projects endpoints ───────────────────────────
+
+export async function getAllProjects(
+  token?: string,
+): Promise<{ projects: ProjectInfo[] }> {
+  return get<{ projects: ProjectInfo[] }>("/projects", token);
+}
+
+export async function deleteProject(
+  projectId: string,
+  token?: string,
+): Promise<{ status: string; project_id: string }> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetchWithBaseFallback(`/project/${projectId}`, {
+    method: "DELETE",
+    headers,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Failed to delete project");
+  }
+
+  return res.json() as Promise<{ status: string; project_id: string }>;
 }

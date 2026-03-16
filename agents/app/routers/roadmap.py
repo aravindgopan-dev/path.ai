@@ -1,347 +1,247 @@
-"""Roadmap router — POST /roadmap with level-based structure and DB persistence."""
+"""Roadmap router — POST /roadmap to generate simple step-by-step roadmap"""
 
 from __future__ import annotations
 
-import uuid
-import asyncio
-import logging
-
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from app.db.database import get_db
-from app.db.models import Project, RoadmapNodeModel
 
 from app.graph import roadmap_graph
-from app.agents.file_tree_agent import generate_file_tree
-from app.agents.documentation_agent import generate_documentation
 from app.auth import get_current_user
-
-logger = logging.getLogger(__name__)
+from app.db.database import get_db
+from app.db.models import Project
 
 router = APIRouter()
 
 
-# ── Helper: flatten level-based structure to ordered node list ──
+def _is_file_like_path(path: str) -> bool:
+    candidate = str(path or "").strip()
+    if not candidate or candidate.endswith("/"):
+        return False
 
-_TYPE_MAP = {"coding": "coding", "learning": "learning", "setup": "setup"}
+    leaf = candidate.split("/")[-1]
+    if "." in leaf:
+        return True
 
-def flatten_levels_to_nodes(
-    levels: list[dict],
-    db_nodes_by_id: dict | None = None,
-) -> list[dict]:
-    """Convert level-grouped roadmap into a flat ordered node array.
-
-    Each node gets:
-      - order_index  (global position)
-      - type mapped to old UI types: setup | learning | coding | milestone
-      - dependencies preserved
-      - completed preserved
-      - locked   — True when any dependency node is not yet completed
-      - files    — expected_files from the expected_spec (coding) or empty
-      - validationCriteria — validation_rules from expected_spec or empty
-    """
-    # Pre-compute completed set from level data for lock resolution
-    completed_ids: set[str] = set()
-    for level_data in levels:
-        for node in level_data.get("nodes", []):
-            if node.get("completed", False):
-                completed_ids.add(node.get("id", ""))
-
-    flat: list[dict] = []
-    idx = 0
-    for level_data in levels:
-        level_unlocked = level_data.get("unlocked", True)
-        for node in level_data.get("nodes", []):
-            raw_type = node.get("type", "code")
-            node_id = node.get("id")
-            deps = node.get("dependencies", [])
-
-            # A node is locked if it has unmet dependencies OR its level is locked
-            locked = (not level_unlocked) or any(
-                d not in completed_ids for d in deps
-            )
-
-            # Pull files + validation from DB model if available
-            files: list[str] = []
-            validation_criteria: list[str] = []
-            if db_nodes_by_id and node_id in db_nodes_by_id:
-                db_node = db_nodes_by_id[node_id]
-                spec = db_node.get_expected_spec()
-                if spec:
-                    files = spec.get("expected_files", [])
-                    rules = spec.get("validation_rules", [])
-                    validation_criteria = [
-                        r if isinstance(r, str) else r.get("contains", str(r))
-                        for r in rules
-                    ]
-
-            flat.append({
-                "id": node_id,
-                "title": node.get("title", ""),
-                "type": _TYPE_MAP.get(raw_type, raw_type),
-                "description": node.get("description", ""),
-                "dependencies": deps,
-                "order_index": idx,
-                "completed": node.get("completed", False),
-                "locked": locked,
-                "files": files,
-                "validationCriteria": validation_criteria,
-            })
-            idx += 1
-    return flat
-
-
-class RoadmapRequest(BaseModel):
-    blueprint: dict
-    user_level: str
-    suggested_skills: list
-
-
-@router.post("/roadmap")
-async def generate_roadmap(body: RoadmapRequest, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
-    """Generate consolidated roadmap, persist to DB, and return."""
-    if not body.blueprint:
-        raise HTTPException(status_code=400, detail="blueprint must not be empty")
-    if body.user_level not in ("beginner", "intermediate", "pro"):
-        raise HTTPException(status_code=400, detail="user_level must be beginner, intermediate, or pro")
-
-    # This single call now generates EVERYTHING: nodes, specs, documentation, and the file tree.
-    result = await roadmap_graph.ainvoke(
-        {
-            "blueprint": body.blueprint,
-            "user_level": body.user_level,
-            "suggested_skills": body.suggested_skills,
-        }
-    )
-
-    nodes: list[dict] = result.get("roadmap", [])
-    file_tree: list[dict] = result.get("file_tree", [])
-
-    # ── Persist project ───────────────────────────
-    project_id = body.blueprint.get("project_id") or str(uuid.uuid4())
-    project_name = body.blueprint.get("name", "Untitled")
-
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        project = Project(id=project_id, user_id=user_id, name=project_name)
-        db.add(project)
-    elif project.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to update this project")
-    
-    project.set_blueprint(body.blueprint)
-    project.set_file_tree(file_tree)
-    db.flush()
-
-    # ── Persist nodes ─────────────────────────────
-    # Clear old nodes (re-generation scenario)
-    db.query(RoadmapNodeModel).filter(RoadmapNodeModel.project_id == project_id).delete()
-    db.flush()
-
-    for node_data in nodes:
-        raw_node_id = node_data.get("id") or str(uuid.uuid4())
-        # Prefix node ID with project_id to ensure global uniqueness
-        node_id = f"{project_id}:{raw_node_id}"
-        
-        db_node = RoadmapNodeModel(
-            id=node_id,
-            project_id=project_id,
-            title=node_data.get("title", ""),
-            type=node_data.get("type", "coding"),
-            description=node_data.get("description", ""),
-            level_id=f"level-{node_data.get('level', 0)}",
-            level_order=node_data.get("level", 0),
-            completed=False,
-        )
-        db_node.set_dependencies(node_data.get("dependencies", []))
-        db_node.set_unlock_after(node_data.get("unlock_after", []))
-        db_node.set_metadata(node_data.get("metadata", {}))
-        
-        # Map specialized fields to existing DB columns
-        if node_data.get("type") == "coding":
-            # Store algorithm in instruction_json
-            if node_data.get("algorithm_steps"):
-                db_node.set_instruction({"algorithm_steps": node_data["algorithm_steps"]})
-            # Store validation rules and files in expected_spec_json
-            spec = {
-                "validation_rules": node_data.get("validation_rules", []),
-                "expected_files": node_data.get("files", [])
-            }
-            db_node.set_expected_spec(spec)
-        
-        elif node_data.get("type") == "learning":
-            # Store learning_metadata in documentation_json
-            if node_data.get("learning_metadata"):
-                db_node.set_documentation(node_data["learning_metadata"])
-        
-        elif node_data.get("type") == "setup":
-            # Store setup_commands in instruction_json
-            if node_data.get("setup_commands"):
-                db_node.set_instruction({"setup_commands": node_data["setup_commands"]})
-            
-        db.add(db_node)
-
-    db.commit()
-
-    # Structure into levels for the flattening helper
-    # Group nodes by level to maintain interface compatibility
-    levels_map: dict[int, list] = {}
-    for n in nodes:
-        lv = n.get("level", 0)
-        if lv not in levels_map:
-            levels_map[lv] = []
-        levels_map[lv].append(n)
-    
-    levels_list = []
-    for lv in sorted(levels_map.keys()):
-        levels_list.append({
-            "level_id": f"level-{lv}",
-            "unlocked": lv == 0,
-            "nodes": levels_map[lv]
-        })
-
-    return {"roadmap": flatten_levels_to_nodes(levels_list), "project_id": project_id}
-
-
-@router.get("/project/{project_id}/roadmap-levels")
-def get_roadmap_levels(project_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
-    """Return the level-based roadmap with completion status from DB."""
-    project = db.query(Project).filter(Project.id == project_id, Project.user_id == user_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    nodes = db.query(RoadmapNodeModel).filter(
-        RoadmapNodeModel.project_id == project_id
-    ).order_by(RoadmapNodeModel.level_order, RoadmapNodeModel.id).all()
-
-    # Group nodes into levels
-    levels_map: dict[str, dict] = {}
-    for node in nodes:
-        lid = node.level_id or "level-0"
-        if lid not in levels_map:
-            levels_map[lid] = {
-                "level_id": lid,
-                "title": "",
-                "description": "",
-                "order": node.level_order or 0,
-                "unlocked": False,
-                "nodes": [],
-            }
-        levels_map[lid]["nodes"].append({
-            "id": node.id,
-            "title": node.title,
-            "type": node.type,
-            "description": node.description,
-            "dependencies": node.get_dependencies(),
-            "unlock_after": node.get_unlock_after(),
-            "metadata": node.get_metadata(),
-            "completed": node.completed,
-        })
-
-    # Sort levels by order
-    levels_list = sorted(levels_map.values(), key=lambda l: l["order"])
-
-    # Apply unlock logic: level 1 always unlocked; next level if all previous completed
-    for i, level in enumerate(levels_list):
-        if i == 0:
-            level["unlocked"] = True
-        else:
-            prev_nodes = levels_list[i - 1]["nodes"]
-            level["unlocked"] = all(n["completed"] for n in prev_nodes)
-
-    return {"levels": levels_list, "project_id": project_id}
-
-
-@router.get("/project/{project_id}/roadmap")
-def get_flat_roadmap(project_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
-    """Return a flat ordered roadmap with completion status, lock state, and spec data."""
-    # Re-use the level endpoint logic, then flatten
-    result = get_roadmap_levels(project_id, db, user_id)
-
-    # Build a lookup of DB node models for enrichment
-    nodes = db.query(RoadmapNodeModel).filter(
-        RoadmapNodeModel.project_id == project_id
-    ).all()
-    db_nodes_by_id = {n.id: n for n in nodes}
-
-    return {
-        "roadmap": flatten_levels_to_nodes(result["levels"], db_nodes_by_id),
-        "project_id": project_id,
+    return leaf in {
+        "Dockerfile",
+        "Makefile",
+        "Procfile",
+        "README",
+        "LICENSE",
     }
 
 
-@router.get("/project/{project_id}/file-tree")
-def get_file_tree(project_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
-    """Return the file tree with completion status."""
-    project = db.query(Project).filter(Project.id == project_id, Project.user_id == user_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def _extract_blueprint_file_paths(blueprint: dict) -> list[str]:
+    plan = blueprint.get("file_structure_plan", []) if isinstance(blueprint, dict) else []
+    if not isinstance(plan, list):
+        return []
 
-    file_tree = project.get_file_tree()
-    if file_tree is None:
-        return {"file_tree": [], "progress": 0}
-
-    # Get completion map
-    nodes = db.query(RoadmapNodeModel).filter(
-        RoadmapNodeModel.project_id == project_id
-    ).all()
-    completed_ids = {n.id for n in nodes if n.completed}
-    total_nodes = len(nodes)
-    completed_count = len(completed_ids)
-
-    # Annotate file tree with completion status
-    def _annotate(tree_nodes: list[dict]) -> list[dict]:
-        for entry in tree_nodes:
-            linked = entry.get("linked_nodes", [])
-            entry["is_completed"] = bool(linked) and all(nid in completed_ids for nid in linked)
-            if entry.get("children"):
-                _annotate(entry["children"])
-        return tree_nodes
-
-    annotated = _annotate(file_tree)
-    progress = round((completed_count / total_nodes * 100) if total_nodes > 0 else 0, 1)
-
-    return {"file_tree": annotated, "progress": progress}
+    file_paths: list[str] = []
+    for item in plan:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path", "")).strip()
+        if not path or path.endswith("/"):
+            continue
+        item_type = str(item.get("type", "")).strip().lower()
+        if item_type and item_type not in ("file", "f"):
+            continue
+        file_paths.append(path)
+    return file_paths
 
 
-@router.post("/node/{node_id}/complete")
-def complete_node(node_id: str, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
-    """Mark a node as completed. Unlock next level if all peers are done."""
-    node = db.query(RoadmapNodeModel).join(Project).filter(
-        RoadmapNodeModel.id == node_id,
-        Project.user_id == user_id
-    ).first()
-    if not node:
-        raise HTTPException(status_code=404, detail="Node not found")
+def _enforce_file_coverage(levels: list[dict], blueprint: dict) -> list[dict]:
+    required_files = _extract_blueprint_file_paths(blueprint)
+    if not required_files:
+        return levels
 
-    node.completed = True
-    db.commit()
+    present_files = {
+        str(file_info.get("path", "")).strip()
+        for level in levels
+        if isinstance(level, dict)
+        for file_info in (level.get("files") or [])
+        if isinstance(file_info, dict) and str(file_info.get("path", "")).strip()
+    }
 
-    # Check if this unlocks the next level
-    level_id = node.level_id
-    project_id = node.project_id
+    missing_files = [path for path in required_files if path not in present_files]
+    if not missing_files:
+        return levels
 
-    same_level_nodes = db.query(RoadmapNodeModel).filter(
-        RoadmapNodeModel.project_id == project_id,
-        RoadmapNodeModel.level_id == level_id,
-    ).all()
+    coding_levels = [level for level in levels if isinstance(level, dict) and level.get("type") == "coding"]
+    if not coding_levels:
+        new_level_id = len(levels)
+        new_level = {
+            "level_id": new_level_id,
+            "type": "coding",
+            "title": "Integrate Remaining Project Files",
+            "description": "Cover remaining files from the project file structure plan and complete wiring.",
+            "tasks": [
+                "Implement the remaining modules listed in file_structure_plan.",
+                "Wire imports/exports and ensure files are connected in runtime.",
+                "Run and verify all touched flows end-to-end.",
+            ],
+            "files": [{"path": path, "role": "create"} for path in missing_files],
+            "terminal_commands": [],
+            "validation_criteria": [
+                "All listed files in this level exist in the project.",
+                "All listed files are integrated into the project flow with valid imports/exports.",
+            ],
+        }
+        return [*levels, new_level]
 
-    all_level_completed = all(n.completed for n in same_level_nodes)
+    for idx, file_path in enumerate(missing_files):
+        target_level = coding_levels[idx % len(coding_levels)]
+        target_files = target_level.setdefault("files", [])
+        if not isinstance(target_files, list):
+            target_level["files"] = []
+            target_files = target_level["files"]
+        target_files.append({"path": file_path, "role": "create"})
 
-    # Determine next level
-    next_level_unlocked = False
-    if all_level_completed and node.level_order is not None:
-        next_order = node.level_order + 1
-        next_level_nodes = db.query(RoadmapNodeModel).filter(
-            RoadmapNodeModel.project_id == project_id,
-            RoadmapNodeModel.level_order == next_order,
-        ).all()
-        if next_level_nodes:
-            next_level_unlocked = True
+    return levels
+
+
+def _apply_learning_mode(levels: list[dict], blueprint: dict) -> list[dict]:
+    difficulty = str((blueprint or {}).get("difficulty_target", "beginner")).lower()
+    learning_objectives = (blueprint or {}).get("learning_objectives") or []
+
+    if difficulty == "advanced":
+        filtered = [level for level in levels if isinstance(level, dict) and level.get("type") != "learning"]
+        reindexed = []
+        for new_id, level in enumerate(filtered):
+            reindexed.append({**level, "level_id": new_id})
+        return reindexed
+
+    has_learning_level = any(isinstance(level, dict) and level.get("type") == "learning" for level in levels)
+    if learning_objectives and not has_learning_level:
+        fallback_learning_level = {
+            "level_id": 1 if levels else 0,
+            "type": "learning",
+            "title": "Foundational Learning Module",
+            "description": "Learn the core concepts needed before implementing project features.",
+            "tasks": [
+                f"Study: {objective}" for objective in learning_objectives[:5]
+            ] or ["Study the foundational concepts for this project stack."],
+            "files": [],
+            "terminal_commands": [],
+            "validation_criteria": [],
+        }
+        insert_index = 1 if len(levels) > 1 else len(levels)
+        levels = [*levels[:insert_index], fallback_learning_level, *levels[insert_index:]]
+
+    reindexed = []
+    for new_id, level in enumerate(levels):
+        if isinstance(level, dict):
+            reindexed.append({**level, "level_id": new_id})
+    return reindexed
+
+
+class RoadmapRequest(BaseModel):
+    """Roadmap generation request — takes blueprint only."""
+    blueprint: dict
+    user_level: str  # For backward compatibility, but difficulty_target from blueprint is preferred
+    suggested_skills: list  # For backward compatibility
+
+
+class RoadmapLevelOutput(BaseModel):
+    """Single roadmap level."""
+    level_id: int
+    type: str  # setup|learning|coding
+    title: str
+    description: str
+    tasks: list[str] = Field(default_factory=list)
+    files: list[dict] = Field(default_factory=list)
+    terminal_commands: list[str] = Field(default_factory=list)
+    validation_criteria: list[str] = Field(default_factory=list)
+
+
+class RoadmapResponse(BaseModel):
+    """Roadmap response structure."""
+    roadmap: list[RoadmapLevelOutput]
+    project_id: str
+    total_levels: int = 0
+
+
+@router.post("/roadmap", response_model=RoadmapResponse)
+async def generate_roadmap(
+    body: RoadmapRequest,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a simple step-by-step roadmap from the blueprint.
+    
+    This endpoint:
+    1. Takes blueprint (already saved in DB with learning_objectives populated)
+    2. Calls roadmap agent to generate levels based on file_structure_plan
+    3. Returns roadmap with project_id and level array
+    """
+    if not body.blueprint:
+        raise HTTPException(status_code=400, detail="blueprint must not be empty")
+
+    # Call roadmap graph with blueprint only
+    result = await roadmap_graph.ainvoke(
+        {
+            "blueprint": body.blueprint,
+        }
+    )
+
+    levels = result.get("roadmap", [])
+
+    # Normalize optional arrays from LLM output so response_model validation never sees None
+    normalized_levels = []
+    for level in levels:
+        if not isinstance(level, dict):
+            continue
+        raw_files = level.get("files") or []
+        normalized_files = []
+        for file_item in raw_files:
+            if not isinstance(file_item, dict):
+                continue
+            path = str(file_item.get("path", "")).strip()
+            if not _is_file_like_path(path):
+                continue
+            normalized_files.append(
+                {
+                    "path": path,
+                    "role": file_item.get("role", "create") or "create",
+                }
+            )
+
+        normalized_levels.append(
+            {
+                **level,
+                "tasks": level.get("tasks") or [],
+                "files": normalized_files,
+                "terminal_commands": level.get("terminal_commands") or [],
+                "validation_criteria": level.get("validation_criteria") or [],
+            }
+        )
+
+    levels = _apply_learning_mode(normalized_levels, body.blueprint)
+    levels = _enforce_file_coverage(levels, body.blueprint)
+    project_id = result.get("project_id", body.blueprint.get("project_id", ""))
+    total_levels = len(levels)
+
+    # Save roadmap to database
+    if project_id:
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == user_id
+        ).first()
+        
+        if project:
+            # Save the complete roadmap
+            roadmap_data = {
+                "project_id": project_id,
+                "total_levels": total_levels,
+                "levels": levels,
+            }
+            project.set_roadmap(roadmap_data)
+            db.commit()
 
     return {
-        "completed": True,
-        "node_id": node_id,
-        "level_completed": all_level_completed,
-        "next_level_unlocked": next_level_unlocked,
+        "roadmap": levels,
+        "project_id": project_id,
+        "total_levels": total_levels,
     }

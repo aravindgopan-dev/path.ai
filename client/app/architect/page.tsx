@@ -15,7 +15,6 @@ import { DotPattern } from "@/components/ui/dot-pattern";
 import { cn } from "@/lib/utils";
 import {
   analyseIdea,
-  generateBlueprint,
   type AgentFeature,
 } from "@/lib/agents-api";
 
@@ -48,9 +47,9 @@ export default function ArchitectPage() {
   const router = useRouter();
   const { getToken } = useAuth();
   const setProjectSpec = useAppStore((state) => state.setProjectSpec);
-  const setBlueprint = useAppStore((state) => state.setBlueprint);
   const setProjectSummary = useAppStore((state) => state.setProjectSummary);
   const setTechStack = useAppStore((state) => state.setTechStack);
+  const setSuggestedFeatures = useAppStore((state) => state.setSuggestedFeatures);
 
   const [appState, setAppState] = useState<AppState>("initial");
   const [projectIdea, setProjectIdea] = useState("");
@@ -157,48 +156,31 @@ export default function ArchitectPage() {
       return;
     }
 
-    setIsLoading(true);
     setError(null);
 
-    try {
-      const selectedFeatures = allFeatures.filter((f) => selectedFeatureIds.has(f.id));
-      const token = await getToken();
+    const selectedFeatures = allFeatures.filter((f) => selectedFeatureIds.has(f.id));
+    
+    // Store architect output in Zustand for use in skill-level page
+    setProjectSummary(agentSummary);
+    setTechStack(agentTechStack);
+    setSuggestedFeatures(selectedFeatures.map((f) => ({
+      id: f.id,
+      name: f.name,
+      description: f.description,
+    })));
 
-      // Call agents backend for blueprint generation
-      const { blueprint } = await generateBlueprint({
-        project_summary: agentSummary || projectIdea,
-        selected_features: selectedFeatures.map((f) => ({
-          id: f.id,
-          name: f.name,
-          description: f.description,
-        })),
-        tech_stack: agentTechStack,
-        user_level: "intermediate", // will be refined in skill-level page
-      }, token ?? undefined);
+    // Store spec for backward compat display
+    setFinalSpec({
+      projectName: projectName,
+      description: agentSummary,
+      features: selectedFeatures,
+      levels: [],
+      designerInput: { nodes: [] },
+      projectMarkdown: "",
+    });
 
-      // Store in Zustand
-      setBlueprint(blueprint);
-      setProjectSummary(agentSummary);
-      setTechStack(agentTechStack);
-
-      // Also keep old finalSpec for backward compat display
-      setFinalSpec({
-        projectName: blueprint.name || projectName,
-        description: blueprint.description || agentSummary,
-        features: selectedFeatures,
-        levels: [],
-        designerInput: { nodes: [] },
-        projectMarkdown: "",
-      });
-
-      console.log("[Architect] Blueprint:", blueprint);
-      setAppState("finalized");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
-      console.error("Error finalizing project:", err);
-    } finally {
-      setIsLoading(false);
-    }
+    console.log("[Architect] Stored architect output. Moving to skill level selection.");
+    setAppState("finalized");
   };
 
   const handleProceedToSkillLevel = () => {

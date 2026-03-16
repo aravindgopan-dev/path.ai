@@ -13,27 +13,35 @@ from app.schemas import ValidationSchema
 
 
 async def validate_code(
-    blueprint: dict,
     node: dict,
     user_files: list[dict[str, str]],
-    expected_spec: dict,
+    validation_criteria: list[str],
     node_objective: str = "",
 ) -> dict[str, Any]:
-    """Compare submitted files against expected_spec using AI.
+    """Compare submitted files against node validation_criteria using AI.
 
     Parameters
     ----------
-    blueprint : dict - The project blueprint for context.
     node : dict - The current roadmap node.
     user_files : list of { "filename": str, "content": str }
-    expected_spec : { required_routes, required_functions,
-                      required_imports, expected_files, validation_rules }
+    validation_criteria : list[str] - Criteria to validate for this node.
     node_objective : str - The specific goal of this node.
 
     Returns
     -------
     { status: "pass" | "fail", missing_items: [...], notes: [...], score: int }
     """
+    if not validation_criteria:
+        return {
+            "status": "fail",
+            "score": 0,
+            "missing_items": ["No validation_criteria configured for this node."],
+            "notes": [
+                "This node is missing validation criteria in the roadmap metadata.",
+                "Regenerate the node spec or roadmap to populate validation_criteria before validating.",
+            ],
+        }
+
     llm = get_medium_llm(temperature=0.1)  # Low temperature for strict grading
     structured_llm = llm.with_structured_output(ValidationSchema)
 
@@ -47,9 +55,9 @@ async def validate_code(
         SystemMessage(content=VALIDATOR_SYSTEM),
         HumanMessage(
             content=VALIDATOR_USER.format(
-                blueprint_json=json.dumps(blueprint, indent=2),
+                node_json=json.dumps(node, indent=2),
                 objective=node_objective,
-                spec_json=json.dumps(expected_spec, indent=2),
+                criteria_json=json.dumps(validation_criteria, indent=2),
                 user_code=user_code_summary,
             )
         ),

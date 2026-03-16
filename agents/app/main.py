@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import HOST, PORT
 from app.db.database import init_db
-from app.routers import architect, skills, roadmap
+from app.routers import architect, skills, roadmap, projects, tutor
 from app.routers import blueprint as blueprint_router
 from app.routers import coding as coding_router
 
@@ -40,7 +40,9 @@ app.include_router(architect.router, tags=["architect"])
 app.include_router(blueprint_router.router, tags=["blueprint"])
 app.include_router(skills.router, tags=["skills"])
 app.include_router(roadmap.router, tags=["roadmap"])
+app.include_router(tutor.router, tags=["tutor"])
 app.include_router(coding_router.router, tags=["coding"])
+app.include_router(projects.router, tags=["projects"])
 
 
 @app.get("/health")
