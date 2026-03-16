@@ -852,7 +852,7 @@ function LearnPanel({
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="text-center space-y-3">
@@ -949,7 +949,7 @@ function LearnPanel({
             </div>
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   )
 }
@@ -973,7 +973,7 @@ function DocumentationPanel({
         </p>
       </div>
 
-      <ScrollArea className="flex-1 p-3 text-xs">
+      <div className="flex-1 overflow-y-auto p-3 text-xs">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1047,7 +1047,7 @@ function DocumentationPanel({
             <p className="mt-1">Select a learn or setup node.</p>
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   )
 }
@@ -1167,7 +1167,7 @@ function InstructionPanel({
         </p>
       </div>
 
-      <ScrollArea className="flex-1 p-3 text-xs">
+      <div className="flex-1 overflow-y-auto p-3 text-xs">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1241,7 +1241,7 @@ function InstructionPanel({
             <p className="mt-1">Select a coding node from the roadmap.</p>
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }
