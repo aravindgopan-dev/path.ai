@@ -26,6 +26,10 @@ class BlueprintSchema(BaseModel):
     description: str = Field(..., description="Detailed project description")
     architecture_overview: str = Field(..., description="Summary of the technical architecture")
     milestones: List[MilestoneSchema] = Field(..., description="Key project milestones")
+    entities: List[EntitySchema] = Field(..., description="Data entities/models")
+    api_contract: List[APIEndpointSchema] = Field(..., description="API contract definitions")
+    file_structure_plan: List[FileStructurePlanSchema] = Field(..., description="File and directory structure plan")
+    non_functional_requirements: NonFunctionalRequirementsSchema = Field(default_factory=dict, description="Non-functional requirements")
 
 
 class SkillSchema(BaseModel):
@@ -43,6 +47,7 @@ class DocumentationSchema(BaseModel):
     common_mistakes: List[str] = Field(default_factory=list, description="Things beginners get wrong here")
     implementation_strategy: List[str] = Field(default_factory=list, description="Best practices for implementation")
     files_involved: List[str] = Field(default_factory=list, description="Files the student will create or modify")
+    resources: List[TutorResourceSchema] = Field(default_factory=list, description="Official docs and related learning resources")
 
 
 class ValidationRuleSchema(BaseModel):
@@ -115,3 +120,105 @@ class FeedbackSchema(BaseModel):
 
 class ChatResponseSchema(BaseModel):
     response: str = Field(..., description="The AI assistant's response message")
+
+
+# ──────────────────────────────────────────────
+# NEW ROADMAP FORMAT (Redesigned)
+# ──────────────────────────────────────────────
+
+class RoadmapFileSchema(BaseModel):
+    path: str = Field(..., description="File path relative to project root")
+    role: str = Field(..., description="Role of file: primary|reference|create")
+
+
+class RoadmapLevelSchema(BaseModel):
+    level_id: int = Field(..., description="Unique level ID (0-indexed)")
+    type: str = Field(..., description="Type: setup|learning|coding")
+    title: str = Field(..., description="Level title")
+    description: str = Field(..., description="Detailed description")
+    tasks: List[str] = Field(default_factory=list, description="Task descriptions")
+    files: List[RoadmapFileSchema] = Field(default_factory=list, description="Files involved")
+    terminal_commands: Optional[List[str]] = Field(None, description="CLI commands for setup types")
+    validation_criteria: Optional[List[str]] = Field(None, description="Validation rules for coding types")
+
+
+class NewRoadmapSchema(BaseModel):
+    project_id: str = Field(..., description="Project ID")
+    total_levels: int = Field(..., description="Total number of levels")
+    levels: List[RoadmapLevelSchema] = Field(..., description="Array of roadmap levels")
+
+
+# ──────────────────────────────────────────────
+# TUTOR DOCUMENTATION FORMAT
+# ──────────────────────────────────────────────
+
+class TutorResourceSchema(BaseModel):
+    title: str = Field(..., description="Resource title")
+    url: str = Field(..., description="Resource URL")
+    description: str = Field(..., description="Brief description")
+
+
+class TutorDocumentationSchema(BaseModel):
+    title: str = Field(..., description="Topic title")
+    definition: str = Field(..., description="1-2 sentence definition")
+    why_it_matters: str = Field(..., description="Why this matters for the project")
+    key_concepts: List[str] = Field(..., description="3-5 key concepts")
+    resources: List[TutorResourceSchema] = Field(..., description="External learning resources")
+    example_code: Optional[str] = Field(None, description="Example code snippet")
+    common_mistakes: List[str] = Field(default_factory=list, description="Common beginner mistakes")
+
+
+# ───────────────────────────────────────────────
+# EXPECTED SPEC FOR SETUP/CODING NODES
+# ───────────────────────────────────────────────
+
+class SetupSpecSchema(BaseModel):
+    """Spec for setup-type roadmap nodes."""
+    instructions: List[str] = Field(..., description="Step-by-step setup instructions")
+    files_to_create: List[str] = Field(default_factory=list, description="Files to create/initialize")
+    validation_steps: List[str] = Field(default_factory=list, description="How to verify setup worked")
+
+
+class CodingSpecSchema(BaseModel):
+    """Spec for coding-type roadmap nodes."""
+    task_overview: str = Field(..., description="Clear summary of what to implement")
+    technical_requirements: List[str] = Field(default_factory=list, description="Specific functions/components/endpoints needed")
+    files_to_modify_or_create: List[str] = Field(default_factory=list, description="Which files to work on")
+    step_by_step_guide: List[str] = Field(default_factory=list, description="Detailed implementation steps")
+    validation_criteria: List[str] = Field(default_factory=list, description="What success looks like")
+
+
+class NodeSpecSchema(BaseModel):
+    """Combined spec for setup or coding nodes - returned by expected_spec_agent."""
+    node_type: str = Field(..., description="'setup' or 'coding'")
+    # For setup nodes:
+    instructions: Optional[List[str]] = Field(None, description="Step-by-step setup instructions")
+    files_to_create: Optional[List[str]] = Field(None, description="Files to create/initialize")
+    validation_steps: Optional[List[str]] = Field(None, description="How to verify setup worked")
+    # For coding nodes:
+    task_overview: Optional[str] = Field(None, description="Clear summary of what to implement")
+    technical_requirements: Optional[List[str]] = Field(None, description="Specific functions/components/endpoints needed")
+    files_to_modify_or_create: Optional[List[str]] = Field(None, description="Which files to work on")
+    step_by_step_guide: Optional[List[str]] = Field(None, description="Detailed implementation steps")
+    validation_criteria: Optional[List[str]] = Field(None, description="What success looks like")
+
+class EntitySchema(BaseModel):
+    name: str = Field(..., description="Name of the data entity/model")
+    attributes: dict[str, str] = Field(default_factory=dict, description="Attributes of the entity, with type hints")
+
+
+class APIEndpointSchema(BaseModel):
+    path: str = Field(..., description="API route path (e.g., /users/{id})")
+    method: str = Field(..., description="HTTP method (e.g., GET, POST)")
+    description: str = Field(..., description="What this endpoint does")
+
+
+class FileStructurePlanSchema(BaseModel):
+    path: str = Field(..., description="File or directory path")
+    description: str = Field(..., description="Purpose of the file/directory")
+
+
+class NonFunctionalRequirementsSchema(BaseModel):
+    security: str = Field(default="", description="Security considerations")
+    performance: str = Field(default="", description="Performance goals")
+    scalability: str = Field(default="", description="Scalability requirements")

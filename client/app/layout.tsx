@@ -46,7 +46,7 @@ export default function RootLayout({
               <Navbar />
 
               {/* MAIN CONTENT AREA */}
-              <main className="flex-1 w-full">
+              <main className="flex-1 w-full min-h-0">
                 {children}
               </main>
               <FloatingChatbot />

@@ -9,7 +9,6 @@ import { Separator } from "@/components/ui/separator";
 import { DotPattern } from "@/components/ui/dot-pattern";
 import {
   Sparkles,
-  Zap,
   Rocket,
   ArrowRight,
   Loader2,
@@ -18,7 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { useAppStore } from "@/lib/store";
-import { assessSkills, generateRoadmap, type Skill } from "@/lib/agents-api";
+import { assessSkills, generateRoadmap, generateBlueprint, saveSelectedSkills, type Skill } from "@/lib/agents-api";
 import { cn } from "@/lib/utils";
 
 const LEVELS = [
@@ -32,22 +31,13 @@ const LEVELS = [
       "I'm just starting out. I know the basics of programming and want guided, step-by-step learning.",
   },
   {
-    key: "intermediate",
-    label: "Intermediate",
-    icon: Zap,
-    color: "from-blue-500/20 to-blue-600/5 border-blue-500/30 hover:border-blue-400",
-    badgeClass: "bg-blue-500/10 text-blue-400 border-blue-500/30",
-    description:
-      "I have solid fundamentals. I've built small projects and want to level up with real-world patterns.",
-  },
-  {
-    key: "pro",
-    label: "Pro",
+    key: "advanced",
+    label: "Advanced",
     icon: Rocket,
     color: "from-purple-500/20 to-purple-600/5 border-purple-500/30 hover:border-purple-400",
     badgeClass: "bg-purple-500/10 text-purple-400 border-purple-500/30",
     description:
-      "I'm experienced. I want advanced architecture challenges and production-grade best practices.",
+      "I'm experienced and want to build directly without learning assistance modules.",
   },
 ] as const;
 
@@ -56,11 +46,14 @@ export default function SkillLevelPage() {
 
   const { getToken } = useAuth();
   const blueprint = useAppStore((s) => s.blueprint);
+  const projectSummary = useAppStore((s) => s.projectSummary);
+  const techStack = useAppStore((s) => s.techStack);
+  const suggestedFeatures = useAppStore((s) => s.suggestedFeatures);
+  const setBlueprint = useAppStore((s) => s.setBlueprint);
   const setUserLevel = useAppStore((s) => s.setUserLevel);
   const setSuggestedSkills = useAppStore((s) => s.setSuggestedSkills);
   const setRoadmapNodes = useAppStore((s) => s.setRoadmapNodes);
   const setProjectId = useAppStore((s) => s.setProjectId);
-  const setFileTree = useAppStore((s) => s.setFileTree);
 
   const [selected, setSelected] = useState<string | null>(null);
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -76,15 +69,47 @@ export default function SkillLevelPage() {
   };
 
   const handleConfirmLevel = async () => {
-    if (!selected || !blueprint) return;
+    if (!selected || !projectSummary || techStack.length === 0) return;
 
     setIsLoading(true);
     setError(null);
 
     try {
       const token = await getToken();
+      
+      // Step 1: Generate blueprint from architect output + user level
+      const blueprintResponse = await generateBlueprint({
+        project_summary: projectSummary,
+        suggested_features: suggestedFeatures,
+        recommended_tech_stack: techStack,
+        user_level: selected,
+      }, token ?? undefined);
+
+      const generatedBlueprint = blueprintResponse.blueprint;
+      setBlueprint(generatedBlueprint);
+
+      // Advanced path: no learning assistance, skip skills step entirely.
+      if (selected === "advanced") {
+        setSuggestedSkills([]);
+
+        const roadmapRes = await generateRoadmap(
+          {
+            blueprint: generatedBlueprint,
+            user_level: selected,
+            suggested_skills: [],
+          },
+          token ?? undefined,
+        );
+
+        setRoadmapNodes(roadmapRes.roadmap as any);
+        setProjectId(roadmapRes.project_id);
+        router.push(`/roadmap?projectId=${roadmapRes.project_id}`);
+        return;
+      }
+
+      // Beginner path: assess and choose learning modules.
       const { skills: fetchedSkills } = await assessSkills({
-        blueprint,
+        blueprint: generatedBlueprint,
         user_level: selected,
       }, token ?? undefined);
 
@@ -93,7 +118,7 @@ export default function SkillLevelPage() {
       setSelectedSkillIds(new Set(fetchedSkills.map((s) => s.id)));
       setPhase("skills");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load skills");
+      setError(err instanceof Error ? err.message : "Failed to continue");
     } finally {
       setIsLoading(false);
     }
@@ -115,17 +140,34 @@ export default function SkillLevelPage() {
     setError(null);
     try {
       const token = await getToken();
+      
+      // Step 1: Save selected skills to blueprint's learning_objectives
+      await saveSelectedSkills({
+        project_id: blueprint.project_id,
+        selected_skills: finalSkills,
+      }, token ?? undefined);
+
+      const learningObjectives = finalSkills.map(
+        (skill) => `${skill.name} — ${skill.description}`,
+      );
+      const blueprintForRoadmap = {
+        ...blueprint,
+        learning_objectives: learningObjectives,
+        difficulty_target: selected,
+      };
+      setBlueprint(blueprintForRoadmap as any);
+      
+      // Step 2: Generate roadmap from blueprint
       const res = await generateRoadmap({
-        blueprint,
+        blueprint: blueprintForRoadmap,
         user_level: selected,
         suggested_skills: finalSkills,
       }, token ?? undefined);
 
-      setRoadmapNodes(res.roadmap);
+      setRoadmapNodes(res.roadmap as any);
       setProjectId(res.project_id);
-      setFileTree(res.file_tree);
       
-      router.push("/roadmap");
+      router.push(`/roadmap?projectId=${res.project_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate roadmap");
     } finally {
@@ -133,14 +175,14 @@ export default function SkillLevelPage() {
     }
   };
 
-  // Guard — redirect if no blueprint
-  if (!blueprint) {
+  // Guard — redirect if no architect output
+  if (!projectSummary || techStack.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center space-y-4">
-          <h2 className="text-2xl font-bold">No Blueprint Found</h2>
+          <h2 className="text-2xl font-bold">No Project Found</h2>
           <p className="text-muted-foreground">
-            Please start a new project in the Architect first.
+            Please complete the Architect phase first.
           </p>
           <Button onClick={() => router.push("/architect")}>
             Go to Architect
@@ -163,8 +205,7 @@ export default function SkillLevelPage() {
             <div className="text-center">
               <h1 className="text-5xl font-bold mb-3">Choose Your Level</h1>
               <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-                This helps us tailor the learning path, skill suggestions, and
-                roadmap complexity to your experience.
+                Beginner includes guided learning assistance. Advanced skips learning assistance and goes straight to implementation roadmap.
               </p>
             </div>
 
@@ -222,11 +263,11 @@ export default function SkillLevelPage() {
                 {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Analysing skills…
+                    {selected === "advanced" ? "Generating roadmap…" : "Analysing skills…"}
                   </>
                 ) : (
                   <>
-                    Continue
+                    {selected === "advanced" ? "Generate Roadmap" : "Continue"}
                     <ArrowRight className="h-4 w-4" />
                   </>
                 )}

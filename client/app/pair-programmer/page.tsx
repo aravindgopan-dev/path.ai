@@ -44,7 +44,6 @@ import { useAppStore } from "@/lib/store"
 import { getSocket } from "@/lib/socket"
 import {
   getInstruction,
-  getSkeleton,
   validateNode,
   chatNode,
   completeNode,
@@ -125,6 +124,44 @@ function PairProgrammerContent() {
   const isLearnOrSetup = nodeType === "learn" || nodeType === "setup"
   const editorViewRef = useRef<any>(null)
 
+  const isFileLikePath = (candidate: string) => {
+    const value = String(candidate || "").trim()
+    if (!value || value.endsWith("/")) return false
+    const leaf = value.split("/").pop() || ""
+    if (leaf.includes(".")) return true
+    return ["Dockerfile", "Makefile", "Procfile", "README", "LICENSE"].includes(leaf)
+  }
+
+  const collectRequiredFilesForNode = (nodeFiles: string[] = [], instructionFiles: string[] = []) => {
+    const merged = [...nodeFiles, ...instructionFiles]
+      .map((path) => String(path || "").trim())
+      .filter((path) => path.length > 0)
+      .filter((path) => isFileLikePath(path))
+
+    return Array.from(new Set(merged))
+  }
+
+  // Reset editor for each coding node so node-specific files can be loaded cleanly.
+  useEffect(() => {
+    if (!activeNodeId || isLearnOrSetup) return
+    setOpenFiles([])
+    setCurrentFile(null)
+  }, [activeNodeId, isLearnOrSetup, setOpenFiles, setCurrentFile])
+
+  // Defensive cleanup for persisted or stale directory entries in editor tabs.
+  useEffect(() => {
+    if (isLearnOrSetup) return
+
+    const sanitizedOpenFiles = (openFiles || []).filter((file) => isFileLikePath(file.path || file.name))
+    if (sanitizedOpenFiles.length !== (openFiles || []).length) {
+      setOpenFiles(sanitizedOpenFiles)
+    }
+
+    if (currentFile && !isFileLikePath(currentFile.path || currentFile.name)) {
+      setCurrentFile(sanitizedOpenFiles[0] ?? null)
+    }
+  }, [isLearnOrSetup, openFiles, currentFile, setOpenFiles, setCurrentFile])
+
   // Fetch instruction + skeleton when entering a CODE node
   useEffect(() => {
     if (!activeNodeId || instruction) return
@@ -144,18 +181,25 @@ function PairProgrammerContent() {
 
         setInstruction(instrRes.instruction)
 
-        // Populate editor with initial files from Roadmap spec if present
-        if (activeNode?.files?.length && openFiles.length === 0) {
-          const files = activeNode.files.map((f: string) => ({
-            name: f,
-            language: guessLanguage(f),
+        // Open node-mapped files with empty content (no starter implementation).
+        if (openFiles.length === 0) {
+          const requiredFiles = collectRequiredFilesForNode(
+            activeNode?.files ?? [],
+            instrRes.instruction?.files_involved ?? [],
+          )
+
+          const files = requiredFiles
+            .map((filePath: string) => ({
+            name: filePath,
+            language: guessLanguage(filePath),
             description: "",
-            content: `// ${f}\n// Start coding here...`,
-            path: f,
+            content: "",
+            path: filePath,
           }))
           setOpenFiles(files)
-          setCurrentFile(files[0])
+          setCurrentFile(files[0] ?? null)
         }
+
       } catch (err) {
         console.error("Failed to load node data:", err)
       } finally {
@@ -165,7 +209,7 @@ function PairProgrammerContent() {
 
     fetchNodeData()
     return () => { cancelled = true }
-  }, [activeNodeId, userLevel, isLearnOrSetup])
+  }, [activeNodeId, userLevel, isLearnOrSetup, activeNode?.files, openFiles.length, setOpenFiles, setCurrentFile])
 
   // Fetch documentation when entering a LEARN / SETUP node
   useEffect(() => {
@@ -203,6 +247,7 @@ function PairProgrammerContent() {
   // Sync file changes to sandbox
   useEffect(() => {
     if (!currentFile || !currentFile.path || !projectSpec) return
+    if (!isFileLikePath(currentFile.path)) return
 
     const socket = getSocket()
     let timeoutId: NodeJS.Timeout
@@ -238,7 +283,7 @@ function PairProgrammerContent() {
 
   // ── Validate handler ────────────────────────────
   const handleValidate = async () => {
-    if (!activeNodeId || !openFiles?.length) return
+    if (!activeNodeId) return
 
     setIsValidating(true)
     setValidationExpanded(true)
@@ -273,28 +318,47 @@ function PairProgrammerContent() {
 
   // ── Help handler (annotate code with comments) ──
   const handleHelp = async () => {
-    if (!activeNodeId || !openFiles?.length) return
+    if (!activeNodeId) return
 
     setIsLoadingNode(true)
     try {
       const files = openFiles.map((f) => ({
         filename: f.name,
         content: f.content,
-      }))
+      })).filter((f) => isFileLikePath(f.filename))
       const token = await getToken()
       const helpRes = await getHelp(activeNodeId, files, userLevel, token ?? undefined)
       
       if (helpRes.skeleton?.files?.length) {
-        const updatedFiles = openFiles.map(existing => {
-          const match = helpRes.skeleton.files.find(f => f.filename === existing.name)
-          return match ? { ...existing, content: match.content } : existing
-        })
-        setOpenFiles(updatedFiles)
-        const updatedCurrent = updatedFiles.find(f => f.name === currentFile?.name)
-        if (updatedCurrent) setCurrentFile(updatedCurrent)
+        const generatedFiles = helpRes.skeleton.files
+          .filter((file) => isFileLikePath(file.filename))
+          .map((file) => ({
+          name: file.filename,
+          language: guessLanguage(file.filename),
+          description: "",
+          content: file.content,
+          path: file.filename,
+        }))
+
+        if (!openFiles?.length) {
+          setOpenFiles(generatedFiles)
+          setCurrentFile(generatedFiles[0] ?? null)
+        } else {
+          const generatedByName = new Map(generatedFiles.map((f) => [f.name, f]))
+          const updatedExisting = openFiles.map((existing) => generatedByName.get(existing.name) ?? existing)
+          const appendedNew = generatedFiles.filter((f) => !openFiles.some((existing) => existing.name === f.name))
+          const mergedFiles = [...updatedExisting, ...appendedNew]
+          setOpenFiles(mergedFiles)
+          const updatedCurrent = mergedFiles.find((f) => f.name === currentFile?.name)
+          setCurrentFile(updatedCurrent ?? mergedFiles[0] ?? null)
+        }
       }
     } catch (err) {
-      console.error("Failed to get mentor help:", err)
+      if (err instanceof TypeError && /Failed to fetch/i.test(err.message)) {
+        console.error("Failed to get mentor help: agents backend is unreachable. Ensure agents server is running on NEXT_PUBLIC_AGENTS_BASE_URL.")
+      } else {
+        console.error("Failed to get mentor help:", err)
+      }
     } finally {
       setIsLoadingNode(false)
     }
@@ -485,6 +549,24 @@ function PairProgrammerContent() {
                         Validate
                       </Button>
                     )}
+
+                    {/* Mark Complete Button for coding nodes */}
+                    {activeNodeId && !isLearnOrSetup && (
+                      <Button
+                        size="sm"
+                        className="mx-1 shrink-0 gap-1.5"
+                        onClick={handleMarkComplete}
+                        disabled={isCompleting || isNodeCompleted}
+                        variant={isNodeCompleted ? "secondary" : "default"}
+                      >
+                        {isCompleting ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <CheckCircle2 size={14} />
+                        )}
+                        {isNodeCompleted ? "Completed" : "Mark Complete"}
+                      </Button>
+                    )}
                   </div>
 
                   {/* Score bar */}
@@ -552,7 +634,7 @@ function PairProgrammerContent() {
                         <div className="text-center">
                           <Code2 size={48} className="mx-auto mb-4 opacity-50" />
                           <p>No file selected</p>
-                          <p className="text-sm mt-2">Select a coding node from the roadmap to begin</p>
+                          <p className="text-sm mt-2">Click Help to generate partial starter code for this node</p>
                         </div>
                       </div>
                     )}

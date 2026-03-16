@@ -67,7 +67,7 @@ interface AppState {
     blueprint: Blueprint | null;
     setBlueprint: (bp: Blueprint | null) => void;
 
-    userLevel: string; // "beginner" | "intermediate" | "pro"
+    userLevel: string; // "beginner" | "advanced"
     setUserLevel: (level: string) => void;
 
     suggestedSkills: Skill[];
@@ -98,6 +98,9 @@ interface AppState {
 
     techStack: string[];
     setTechStack: (ts: string[]) => void;
+
+    suggestedFeatures: AgentFeature[];
+    setSuggestedFeatures: (features: AgentFeature[]) => void;
 
     // ── Coding / node state ──────────────────────────
     projectId: string | null;
@@ -166,8 +169,9 @@ export const useAppStore = create<AppState>()(
 
             // ── New agents state defaults ──
             blueprint: null,
-            userLevel: 'intermediate',
+            userLevel: 'beginner',
             suggestedSkills: [],
+            suggestedFeatures: [],
             roadmapNodes: [],
             roadmapLevels: [],
             currentLevelId: null,
@@ -181,6 +185,7 @@ export const useAppStore = create<AppState>()(
             setBlueprint: (bp) => set({ blueprint: bp }),
             setUserLevel: (level) => set({ userLevel: level }),
             setSuggestedSkills: (skills) => set({ suggestedSkills: skills }),
+            setSuggestedFeatures: (features) => set({ suggestedFeatures: features }),
             setRoadmapNodes: (nodes) => set({ roadmapNodes: nodes }),
             setRoadmapLevels: (levels) => set({ roadmapLevels: levels }),
             setCurrentLevelId: (id) => set({ currentLevelId: id }),
@@ -278,7 +283,7 @@ export const useAppStore = create<AppState>()(
                     openFiles: [defaultFile],
                     fileHistory: [],
                     blueprint: null,
-                    userLevel: 'intermediate',
+                    userLevel: 'beginner',
                     suggestedSkills: [],
                     roadmapNodes: [],
                     roadmapLevels: [],

@@ -14,9 +14,9 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import './roadmap.css';
 import { useAppStore } from '@/lib/store';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from "@clerk/nextjs";
-import { getFlatRoadmap, type RoadmapNode } from "@/lib/agents-api";
+import { getFlatRoadmap, getInstruction, getDocumentation, type RoadmapNode } from "@/lib/agents-api";
 import {
   Dialog,
   DialogContent,
@@ -81,7 +81,7 @@ const LevelNode = ({ data }: { data: any }) => {
         <Handle type="target" position={data.targetPosition} style={{ opacity: 0 }} />
       )}
       <div 
-        className={`level-node ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}
+        className={`level-node type-${data.nodeType || 'code'} ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}
         onClick={() => {
            if (!isLocked && data.onClick) data.onClick(data.nodeRaw);
         }}
@@ -114,20 +114,36 @@ const nodeTypes = {
 
 export default function RoadmapPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const blueprint = useAppStore((s) => s.blueprint);
   const roadmapNodes = useAppStore((s) => s.roadmapNodes);
   const setRoadmapNodes = useAppStore((s) => s.setRoadmapNodes);
-  const projectId = useAppStore((s) => s.projectId);
+  let projectId = useAppStore((s) => s.projectId);
+  const setProjectId = useAppStore((s) => s.setProjectId);
   const setActiveNodeId = useAppStore((s) => s.setActiveNodeId);
   const _hasHydrated = useAppStore((s) => s._hasHydrated);
+  const userLevel = useAppStore((s) => s.userLevel);
   const { getToken } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<RoadmapNode | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isInteractive, setIsInteractive] = useState(true);
+  const prefetchedNodeIdsRef = React.useRef<Set<string>>(new Set());
 
   const [viewportWidth, setViewportWidth] = useState(1200);
+
+  // Get projectId from query parameters if not in state
+  useEffect(() => {
+    if (!_hasHydrated) return;
+    
+    const queryProjectId = searchParams.get("projectId");
+    if (queryProjectId && !projectId) {
+      setProjectId(queryProjectId);
+      projectId = queryProjectId;
+    }
+  }, [_hasHydrated, searchParams, projectId, setProjectId]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -142,7 +158,10 @@ export default function RoadmapPage() {
     if (!_hasHydrated) return;
     let cancelled = false;
     const fetchRoadmap = async () => {
-      if (!projectId) return;
+      if (!projectId) {
+        setError("No project selected. Please select a project from the dashboard.");
+        return;
+      }
       setIsLoading(true);
       setError(null);
       try {
@@ -160,12 +179,34 @@ export default function RoadmapPage() {
     return () => { cancelled = true; };
   }, [_hasHydrated, projectId, setRoadmapNodes]);
 
+  const prefetchNodeContent = React.useCallback(async (node: RoadmapNode | undefined | null) => {
+    if (!node || prefetchedNodeIdsRef.current.has(node.id)) return;
+
+    prefetchedNodeIdsRef.current.add(node.id);
+
+    try {
+      const token = await getToken();
+      if (node.type === "code") {
+        await getInstruction(node.id, userLevel, token ?? undefined);
+      } else {
+        await getDocumentation(node.id, token ?? undefined);
+      }
+    } catch (error) {
+      console.error("Background prefetch failed:", error);
+    }
+  }, [getToken, userLevel]);
+
   const handleNodeClick = (node: RoadmapNode) => {
     setSelectedNode(node);
     setIsModalOpen(true);
   };
 
   const handleStartNode = (node: RoadmapNode) => {
+    const currentIndex = roadmapNodes.findIndex((item) => item.id === node.id);
+    const nextNode = currentIndex >= 0 ? roadmapNodes[currentIndex + 1] : undefined;
+
+    void prefetchNodeContent(nextNode);
+
     setActiveNodeId(node.id);
     setIsModalOpen(false);
     if (node.type === "setup") {
@@ -234,6 +275,7 @@ export default function RoadmapPage() {
           description: level.description,
           completed: level.completed,
           locked: level.locked,
+          nodeType: level.type,
           sourcePosition,
           targetPosition,
           nodeRaw: level,
@@ -271,6 +313,13 @@ export default function RoadmapPage() {
     }
   }, [initialNodes, initialEdges, setNodes, setEdges]);
 
+  useEffect(() => {
+    if (!roadmapNodes?.length) return;
+
+    const unlockedNode = roadmapNodes.find((node) => !node.completed && !node.locked) ?? roadmapNodes[0];
+    void prefetchNodeContent(unlockedNode);
+  }, [roadmapNodes, prefetchNodeContent]);
+
   if (!_hasHydrated) return (
     <div className="flex items-center justify-center min-h-screen">
       <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -282,9 +331,12 @@ export default function RoadmapPage() {
       <div className="text-center space-y-4">
         <h2 className="text-2xl font-bold">No Project Found</h2>
         <p className="text-muted-foreground">
-          Please start a new project in the Architect first.
+          Please select a project from the dashboard or start a new one.
         </p>
-        <Button onClick={() => router.push("/architect")}>Go to Architect</Button>
+        <div className="flex gap-3 justify-center">
+          <Button onClick={() => router.push("/dashboard")}>Go to Dashboard</Button>
+          <Button variant="outline" onClick={() => router.push("/architect")}>Create New</Button>
+        </div>
       </div>
     </div>
   );
@@ -303,7 +355,10 @@ export default function RoadmapPage() {
       <div className="text-center space-y-4">
         <h2 className="text-2xl font-bold text-destructive">Error</h2>
         <p className="text-muted-foreground">{error}</p>
-        <Button onClick={() => router.push("/skill-level")}>Go Back</Button>
+        <div className="flex gap-3 justify-center">
+          <Button onClick={() => router.push("/dashboard")}>Go to Dashboard</Button>
+          <Button variant="outline" onClick={() => router.push("/architect")}>Create New</Button>
+        </div>
       </div>
     </div>
   );
@@ -338,15 +393,15 @@ export default function RoadmapPage() {
             fitView
             minZoom={0.5}
             maxZoom={1.5}
-            zoomOnScroll={false}
-            zoomOnPinch={true}
-            zoomOnDoubleClick={true}
-            panOnDrag={true}
-            panOnScroll={true}
+            zoomOnScroll={isInteractive}
+            zoomOnPinch={isInteractive}
+            zoomOnDoubleClick={isInteractive}
+            panOnDrag={isInteractive}
+            panOnScroll={isInteractive}
             panOnScrollSpeed={0.5}
             nodesDraggable={false}
             nodesConnectable={false}
-            elementsSelectable={false}
+            elementsSelectable={isInteractive}
           >
             <svg>
               <defs>
@@ -358,7 +413,7 @@ export default function RoadmapPage() {
               </defs>
             </svg>
             <Background color="#1a1c38" gap={16} />
-            <Controls />
+            <Controls showInteractive onInteractiveChange={(interactive) => setIsInteractive(interactive)} />
           </ReactFlow>
         )}
       </div>
@@ -423,6 +478,7 @@ export default function RoadmapPage() {
                 )}
 
                 {((selectedNode.expected_spec?.validation_rules && selectedNode.expected_spec.validation_rules.length > 0) || 
+                  (selectedNode.metadata?.validation_criteria && selectedNode.metadata.validation_criteria.length > 0) ||
                   (selectedNode.documentation?.algorithm_steps && selectedNode.documentation.algorithm_steps.length > 0)) && (
                   <div>
                     <h4 className="text-sm font-semibold mb-3">
@@ -430,7 +486,10 @@ export default function RoadmapPage() {
                     </h4>
                     <ul className="space-y-2">
                       {selectedNode.type === 'code' ? (
-                        selectedNode.expected_spec?.validation_rules.map((v: any, i: number) => (
+                        (selectedNode.metadata?.validation_criteria?.length
+                          ? selectedNode.metadata.validation_criteria
+                          : selectedNode.expected_spec?.validation_rules ?? []
+                        ).map((v: any, i: number) => (
                           <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
                             <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 mt-1.5 shrink-0" />
                             {typeof v === 'string' ? v : v.contains ? `Must contain: ${v.contains}` : JSON.stringify(v)}
